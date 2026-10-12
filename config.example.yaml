@@ -1,0 +1,23 @@
+# spoken 配置文件
+# 使用方法：复制本文件为 config.yaml，填入你的 API Key。
+
+llm:
+  # 任何 OpenAI 兼容接口均可（/chat/completions）
+  # 常见示例：
+  #   OpenAI:     https://api.openai.com/v1
+  #   DeepSeek:   https://api.deepseek.com/v1
+  #   Moonshot:   https://api.moonshot.cn/v1
+  #   通义千问:    https://dashscope.aliyuncs.com/compatible-mode/v1
+  #   Ollama:     http://localhost:11434/v1
+  base_url: "https://api.deepseek.com/v1"
+  api_key: "sk-在这里填入你的Key"
+  model: "deepseek-chat"
+  temperature: 0.7
+  timeout: 60
+
+dialogue:
+  max_turns: 25          # 单次对话最多轮数
+  min_turns: 3           # 至少聊几轮才允许自然结束
+  feedback_language: zh  # 纠错解释语言：zh（中文）/ en（英文）
+  save_report: true      # 结束后是否保存 Markdown 总结报告
+  report_dir: reports    # 报告保存目录
