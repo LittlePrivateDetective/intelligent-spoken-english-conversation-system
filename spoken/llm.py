@@ -50,12 +50,15 @@ class OpenAICompatibleLLM:
     """任何 OpenAI 兼容的 /chat/completions 接口（OpenAI、DeepSeek、Moonshot、Ollama 等）。"""
 
     def __init__(self, base_url: str, api_key: str, model: str,
-                 temperature: float = 0.7, timeout: int = 60) -> None:
+                 temperature: float = 0.7, timeout: int = 60,
+                 think: bool | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.temperature = temperature
         self.timeout = timeout
+        # None = 不下发 think 参数（绝大多数服务商）；True/False = Ollama 思考开关
+        self.think = think
 
     def chat(self, messages: list[dict], purpose: str = "turn") -> str:
         """调用对话接口，返回模型输出的文本内容。"""
@@ -97,6 +100,8 @@ class OpenAICompatibleLLM:
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
+        if self.think is not None:
+            payload["think"] = self.think
         return payload
 
 
@@ -136,7 +141,7 @@ class MockLLM:
         for key, sc in SCENARIOS.items():
             if sc["name"] in system:
                 return key
-        return "hotel_checkin"
+        return "daily_smalltalk"
 
     @staticmethod
     def _detect_difficulty(system: str) -> str:
@@ -226,7 +231,7 @@ class MockLLM:
             and not m["content"].startswith(
                 ("对话到此结束", "请开始对话", "你上一条回复"))
         ]
-        first_user = user_lines[0] if user_lines else "I want to booking a room."
+        first_user = user_lines[0] if user_lines else "I very like meeting new people."
         return {
             "overall": (
                 f"你在「{sc['name']}」场景中完成了整段英语对话，表达意愿积极，"
@@ -273,32 +278,32 @@ class MockLLM:
     }
 
     _OPENINGS = {
-        "hotel_checkin": "Good evening, welcome to the Grand Hotel! How may I help you tonight?",
+        "daily_smalltalk": "Hi there! I don't think we've met before. I'm Alex — how's your day going?",
         "airport_checkin": "Good morning! Are you checking in today? May I see your passport, please?",
         "job_interview": "Good morning, please take a seat. To start off, could you tell me a little about yourself?",
         "restaurant_order": "Good evening! Here is your table and the menu. Would you like a few minutes, or shall I recommend something?",
     }
 
     _CLOSINGS = {
-        "hotel_checkin": "You're welcome. Enjoy your stay, and have a good night!",
+        "daily_smalltalk": "It was really nice talking to you. Take care, and see you around!",
         "airport_checkin": "You're all set. Here is your boarding pass. Have a great flight!",
         "job_interview": "Thank you for coming in today. We'll be in touch next week. Goodbye!",
         "restaurant_order": "Of course, I'll bring the bill right away. Thank you for coming, goodbye!",
     }
 
     _HINTS = {
-        "hotel_checkin": "可以试着问：Do you have any rooms available tonight?（今晚还有空房吗？）",
+        "daily_smalltalk": "可以试着说：I usually go running after work.（我下班后通常去跑步。）",
         "airport_checkin": "可以试着问：Which gate does my flight leave from?（我的航班在几号登机口？）",
         "job_interview": "可以试着回答：I'm a quick learner and I enjoy solving practical problems.（我学得快，喜欢解决实际问题。）",
         "restaurant_order": "可以试着问：What do you recommend tonight?（今晚有什么推荐？）",
     }
 
     _FOLLOW_UPS = {
-        "hotel_checkin": [
-            "Certainly. Could you spell your last name for me, please?",
-            "Thank you. I've found your reservation — a standard room for two nights. Is that correct?",
-            "May I see your ID card or passport, please?",
-            "Here is your key card. Room 1208, on the twelfth floor. Breakfast is served from 7 to 9:30 a.m.",
+        "daily_smalltalk": [
+            "So, what do you usually like to do in your free time?",
+            "That sounds fun! Do you often do that on weekends?",
+            "By the way, have you watched any good movies lately?",
+            "Anyway, it was really nice talking to you!",
         ],
         "airport_checkin": [
             "Thank you. Are you checking in any bags today?",
@@ -321,10 +326,10 @@ class MockLLM:
     }
 
     _WORD_POOL = {
-        "hotel_checkin": [
-            {"word": "check in", "meaning_zh": "办理入住", "example": "I'd like to check in, please."},
-            {"word": "reservation", "meaning_zh": "预订；订好的房间", "example": "I have a reservation under the name Zhang."},
-            {"word": "key card", "meaning_zh": "房卡", "example": "Here is your key card."},
+        "daily_smalltalk": [
+            {"word": "small talk", "meaning_zh": "闲聊；寒暄", "example": "We made small talk about the weather."},
+            {"word": "break the ice", "meaning_zh": "打破僵场", "example": "A joke is a good way to break the ice."},
+            {"word": "catch up", "meaning_zh": "叙旧；了解近况", "example": "Let's grab a coffee and catch up."},
         ],
         "airport_checkin": [
             {"word": "boarding pass", "meaning_zh": "登机牌", "example": "Here is your boarding pass."},
@@ -346,26 +351,25 @@ class MockLLM:
     # 纠错触发器：(判定函数, 纠错内容)。判定函数保证 correction 的 original
     # 一定出现在用户输入中，模拟“只纠真正说错的部分”。
     _TRIGGERS = {
-        "hotel_checkin": [
-            (lambda t: "want to booking" in t, {
+        "daily_smalltalk": [
+            (lambda t: "i am agree" in t, {
                 "corrections": [{
-                    "original": "want to booking",
-                    "corrected": "want to book",
-                    "reason": "want to 后面要接动词原形，不能用动名词形式",
+                    "original": "I am agree",
+                    "corrected": "I agree",
+                    "reason": "agree 本身就是动词，前面不需要再加 am；I agree 就是完整说法",
                     "type": "grammar",
                 }],
-                "alternatives": ["I'd like to book a room for two nights, please."],
-                "new_words": [{"word": "book a room", "meaning_zh": "订房",
-                               "example": "I'd like to book a room for two nights."}],
+                "alternatives": ["I totally agree with you."],
+                "new_words": [],
             }),
-            (lambda t: "two night" in t and "two nights" not in t, {
+            (lambda t: "very like" in t, {
                 "corrections": [{
-                    "original": "two night",
-                    "corrected": "two nights",
-                    "reason": "表示“两晚”时 night 是可数名词，要用复数",
-                    "type": "grammar",
+                    "original": "very like",
+                    "corrected": "really like",
+                    "reason": "汉语的“很”不能直译成 very 修饰动词，英语用 really 更自然",
+                    "type": "expression",
                 }],
-                "alternatives": ["I'd like to stay for two nights."],
+                "alternatives": ["I really like hiking on weekends."],
                 "new_words": [],
             }),
         ],

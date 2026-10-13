@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spoken"
-version = "0.1.0"
-description = "智能英语口语对话练习程序：选择场景与难度，AI 扮演角色陪练并实时纠错（命令行）"
+version = "1.0.0"
+description = "智能英语口语教练：Windows 桌面程序，选择场景与难度，AI 语音对话并实时纠错"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-keywords = ["english", "speaking", "practice", "llm", "cli"]
+keywords = ["english", "speaking", "practice", "llm", "gui", "speech"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Environment :: Console",
+    "Environment :: Win32 (MS Windows)",
     "Intended Audience :: Education",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -23,8 +23,16 @@ dependencies = [
     "PyYAML>=6.0",
 ]
 
+[project.optional-dependencies]
+# 语音能力（可选）：不装也能以纯文字模式运行
+voice = [
+    "faster-whisper>=1.0",
+    "sounddevice>=0.4",
+    "pyttsx3>=2.90",
+]
+
 [project.scripts]
-spoken = "spoken.cli:main"
+spoken = "spoken.gui:main"
 
 [tool.setuptools]
 packages = ["spoken"]

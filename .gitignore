@@ -7,5 +7,10 @@ dist/
 venv/
 config.yaml
 reports/
+practice_history.db
+vocab.db
+models/
+tts_debug.log
+_shot_*.png
 .workbuddy/
 .DS_Store

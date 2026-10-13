@@ -8,12 +8,15 @@ llm:
   #   DeepSeek:   https://api.deepseek.com/v1
   #   Moonshot:   https://api.moonshot.cn/v1
   #   通义千问:    https://dashscope.aliyuncs.com/compatible-mode/v1
-  #   Ollama:     http://localhost:11434/v1
+  #   Ollama:     http://localhost:11434/v1   （本地模型，key 可随意填）
   base_url: "https://api.deepseek.com/v1"
   api_key: "sk-在这里填入你的Key"
   model: "deepseek-chat"
   temperature: 0.7
   timeout: 60
+  # 可选：Ollama 思考模型（如 qwen3）的思考开关。false = 不生成推理过程，回复更快。
+  # 其他服务商请删除本行。
+  # think: false
 
 dialogue:
   max_turns: 25          # 单次对话最多轮数
@@ -21,3 +24,46 @@ dialogue:
   feedback_language: zh  # 纠错解释语言：zh（中文）/ en（英文）
   save_report: true      # 结束后是否保存 Markdown 总结报告
   report_dir: reports    # 报告保存目录
+
+voice:
+  asr_model: base        # faster-whisper 模型：tiny / base / small / medium
+  # 模型默认自动下载到项目 models/faster-whisper-<尺寸>/ 目录（断点续传）。
+  # 仅当你手动下载了模型文件、想指定其他位置时才需要填这里：
+  # Windows 示例：asr_model_local_path: "D:/models/faster-whisper-base"
+  asr_model_local_path: ""
+  asr_language: en       # 识别语言（练习英语固定 en）
+  sample_rate: 16000     # 录音采样率（Hz）
+  tts_rate: 175          # AI 朗读语速（词/分钟，本地 SAPI 用）
+  tts_voice: ""          # 留空 = 自动选英文语音；或填本机 SAPI 语音 id
+  tts_volume: 100        # 音量 0~100
+  tts_speed: medium      # 语速档位：slow / medium / fast
+  auto_speak: true       # AI 台词自动朗读（纠错反馈不朗读）
+
+# 云端 TTS（可选）：开启后用 DashScope CosyVoice 合成，支持多语种、音色更清晰。
+# 未开启或失败会自动回退本地 SAPI。需单独在百炼开通并获取 API Key。
+#
+# 口音可选值（详见 spoken/accents.py，均为 CosyVoice 官方音色，勿混用其他模型音色）：
+#   en-US  美式英语   loongabby_v3   ← 可用，英语练习推荐
+#   en-GB  英式英语   loongemily_v3  ← 可用，英语练习推荐
+#   ja-JP  日语发音人 loongriko_v3   ← 音色只朗读日语，不是英语口音
+#   ko-KR  韩语发音人 loongkyong_v3  ← 音色只朗读韩语，不是英语口音
+#   th-TH / en-IN / vi-VN / ms-MY / kk-KZ / uz-UZ
+#          → CosyVoice 官方无对应音色（泰语/印度英语/越南语/马来语/哈萨克语/
+#            乌兹别克语），界面中会置灰不可选
+# 若需要以上缺失口音，可在下方 custom_voice 填入「声音复刻」得到的音色 id。
+cloud_tts:
+  enabled: false
+  api_key: ""            # 百炼 API Key（与 qwen-plus 可共用同一 Key）
+  model: "cosyvoice-v3-flash"
+  accent: "en-US"        # 口音/发音人，取值见上方说明
+  custom_voice: ""       # 自定义音色 id（留空则用上面 accent 对应的官方音色）
+  custom_language_hint: ""  # 自定义音色的语言，留空默认 en
+
+# 发音/流利度评分（可选）：阿里云「智能语音交互」语音评测，真正声学打分。
+# 与 qwen-plus / 云端 TTS 是独立服务，需单独开通并获取 AppKey 与 Token。
+assessment:
+  enabled: false
+  appkey: ""             # 智能语音交互项目 AppKey
+  token: ""              # 访问 Token（也可后续改为用 AK/SK 自动获取）
+  region: "cn-shanghai"  # 服务地域
+  model_id: "en.pred.score"

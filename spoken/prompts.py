@@ -10,13 +10,61 @@ OPENING_INSTRUCTION = (
 
 SUMMARY_INSTRUCTION = (
     "对话到此结束。请根据上面的完整对话记录，生成本次口语练习总结。"
-    "只输出规定的 JSON 对象，不要输出其他文字。"
+    "只输出一个 JSON 对象（不要 markdown 代码块，不要其他文字），字段如下："
+    '{"overall": "一两句中文总体评价", '
+    '"suggestions": ["两条具体的中文练习建议"], '
+    '"improvements": [{"issue": "最需要改进的点（中文）", "suggestion": "怎么改（中文）"}], '
+    '"encouragement": "一句简短的英文鼓励"}'
 )
 
 JSON_REPAIR_INSTRUCTION = (
     "你上一条回复不是合法的 JSON。请严格按照系统提示中规定的字段，"
     "只输出一个 JSON 对象，不要使用 markdown 代码块，不要输出任何其他文字。"
 )
+
+# ------------------------------------------------------------------
+# 生词本：查词 / 生词生成（新增调用场景，复用通义接入方式）
+# ------------------------------------------------------------------
+VOCAB_SYSTEM_PROMPT = """你是一个专业的英语词典与词汇教学助手，正在为「spoken」英语口语练习程序的智能生词本生成词条。
+
+【目标】对给定的英文单词或短语，生成结构化、可直接用于学习的词条，包含四块：词头、词形变换（派生词）、近义/同词性对比、相关短语与搭配。
+
+【输出 JSON 字段】
+{
+  "word": "单词或短语（保持原样，小写优先）",
+  "phonetic": "音标（用 /.../ 包裹，如 /ˈwɜːd/，英式或美式均可）",
+  "pos": "核心词性缩写，如 n. / v. / adj. / adv. / phr.",
+  "definition_zh": "中文释义（简洁准确）",
+  "derivations": [
+    {"word": "派生词", "pos": "词性缩写", "definition_zh": "中文释义"}
+  ],
+  "contrast": [
+    {
+      "pos": "被对比的词性，如 adj. / v.",
+      "items": [
+        {"word": "词1", "focus": "含义侧重（它强调什么）", "register": "语体正式度（正式/中性/口语）", "scene": "典型使用场景", "example": "英文例句"}
+      ]
+    }
+  ],
+  "phrases": [
+    {"phrase": "短语", "structure": "搭配结构说明", "meaning_zh": "中文释义", "example": "英文例句"}
+  ]
+}
+
+【规则】
+1. derivations：列出该词能衍生的所有相关词形（如名词→动词、形容词、副词、反义派生等），每个都要有 pos 与中文释义；没有可返回空数组 []。
+2. contrast：只有当「derivations 或该词相关的词」里出现两个及以上相同词性（例如两个形容词、两个动词）时，才必须列出对比区。对每个同词性组，逐项说明 含义侧重 / 使用场景 / 语体正式度 的区别，并各配一句英文例句。若没有任何同词性重复，返回空数组 []。
+3. phrases：列出该词常用短语；每个短语必须写清搭配结构——动词后面接的是 -ing 形式、to do、还是接 something / someone（宾语）；宾语是人还是物还是具体名词，全部写清楚。每个短语配一句英文例句与中文释义。
+4. 中文释义用简体中文；例句用自然英文，不要包含中文。
+5. 只输出一个 JSON 对象，不要使用 markdown 代码块，不要输出任何其他文字。"""
+
+
+def build_vocab_messages(word: str) -> list[dict]:
+    """构造生词生成的对话消息：系统提示 + 用户给定的词。"""
+    return [
+        {"role": "system", "content": VOCAB_SYSTEM_PROMPT},
+        {"role": "user", "content": f"请为下面这个英文单词/短语生成生词卡片：{word}"},
+    ]
 
 
 def build_system_prompt(scenario_key: str, difficulty_key: str,
@@ -51,6 +99,7 @@ def build_system_prompt(scenario_key: str, difficulty_key: str,
 3. 根据用户表现动态调整难度：用户表达流畅时就自然提升用词和句法难度；用户明显吃力时就放慢、简化，避免对话卡住。
 4. 用户卡壳（长时间停顿、只说“不知道”、请求提示、答非所问）时，不要结束对话；先用一句简单的英语鼓励或承接，再通过 hint 给出中文提示，帮助用户继续说下去。
 5. 只有当场景目标已达成、用户也自然告别时，should_end 才为 true。
+6. 绝对不要重复你之前已经问过或说过的内容。每一轮都必须基于用户上一轮的回答，提出新的、相关的后续问题或评论，推动对话向前发展；禁止绕回已经讨论过的旧话题或旧问题。
 
 【纠错规则】
 1. corrections 只针对用户刚刚说过的原话；original 必须是用户原话中逐字出现的片段，绝对不允许编造用户没说过的内容；用户没有错误时返回空数组 []。
@@ -60,7 +109,7 @@ def build_system_prompt(scenario_key: str, difficulty_key: str,
 【输出格式】
 每次只输出一个 JSON 对象，不要使用 markdown 代码块，不要输出任何其他文字：
 {{
-  "corrections": [{{"original": "用户原话中的精确片段", "corrected": "修改后的说法", "reason": "原因", "type": "grammar|word|politeness|spelling"}}],
+  "corrections": [{{"original": "用户原话中的精确片段", "corrected": "修改后的说法", "reason": "原因", "type": "grammar|word|expression|politeness"}}],
   "alternatives": ["更地道的整句1", "更地道的整句2"],
   "new_words": [{{"word": "值得记录的单词或短语", "meaning_zh": "中文释义", "example": "英文例句"}}],
   "next_line": "你（角色）下一句要说的英语台词",

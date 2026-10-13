@@ -1,8 +1,9 @@
-"""支持 python -m spoken 运行。"""
+"""支持 python -m spoken 运行（启动桌面 GUI）。
 
-import sys
+旧版命令行界面仍保留：python -m spoken.cli
+"""
 
-from .cli import main
+from .gui import main
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

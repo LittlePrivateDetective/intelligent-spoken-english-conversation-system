@@ -173,7 +173,7 @@ def _run_dialogue(engine: DialogueEngine, max_turns: int) -> dict | None:
                 continue
             if command == "/level":
                 _out(f"  当前难度：{DIFFICULTIES[engine.difficulty]['name']}，"
-                     f"已聊 {engine.turn} 轮，纠错 {engine.correction_count} 处")
+                     f"已聊 {engine.turn} 轮，纠错 {engine.total_corrections} 处")
                 continue
             if command == "/hint":
                 # 把“请求提示”翻译成一句自然的英语，让 AI 按规则给出提示
@@ -260,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
             model=config.model,
             temperature=config.temperature,
             timeout=config.timeout,
+            think=getattr(config, "think", None),
         )
 
     scenario_key = args.scenario or choose_scenario()
@@ -279,3 +280,7 @@ def main(argv: list[str] | None = None) -> int:
         except OSError as exc:
             _out(f"\n⚠️ 报告保存失败：{exc}")
     return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

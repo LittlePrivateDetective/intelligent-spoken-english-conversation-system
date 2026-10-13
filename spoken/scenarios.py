@@ -32,15 +32,40 @@ DIFFICULTIES: dict[str, dict] = {
     },
 }
 
+# 每个场景的热词 / 专有名词：传给 faster-whisper 的 hotwords，提升识别准确率。
+# 重点是容易识别错的专有名词、缩写、生词；尽量用小写、空格分隔。
+SCENARIO_HOTWORDS: dict[str, str] = {
+    "daily_smalltalk": (
+        "small talk break the ice catch up weekend hobby weather "
+        "coffee movie friend party relax"
+    ),
+    "airport_checkin": (
+        "boarding pass check in gate luggage baggage overweight flight "
+        "passport seat window aisle layover takeoff land terminal "
+        "Boarding Pass"
+    ),
+    "job_interview": (
+        "interview resume graduate project experience teamwork leadership "
+        "responsibility challenge solution company position salary "
+        "hands-on debug"
+    ),
+    "restaurant_order": (
+        "menu order steak medium rare well done appetizer dessert "
+        "recommend bill tip waiter beverage vegetarian spicy medium "
+        "rare"
+    ),
+}
+
+
 SCENARIOS: dict[str, dict] = {
-    "hotel_checkin": {
-        "name": "办理入住",
-        "name_en": "Hotel Check-in",
-        "summary": "在酒店前台办理入住登记",
-        "ai_role": "酒店前台接待员",
-        "user_role": "刚到店的客人",
-        "setting": "晚上八点，客人走进酒店大堂，前台主动问候。",
-        "goals": "确认预订信息、登记证件、说明房型/早餐/退房时间、交付房卡，必要时处理加床或投诉。",
+    "daily_smalltalk": {
+        "name": "日常寒暄",
+        "name_en": "Small Talk",
+        "summary": "与刚认识的人闲聊日常话题",
+        "ai_role": "刚认识的朋友",
+        "user_role": "初次见面的访客",
+        "setting": "在一场社区活动或公司茶水间，你和一位刚认识的人聊了起来。",
+        "goals": "自然地打开并维持话题（天气、爱好、工作学习、周末计划），对话有来有回，最后礼貌道别。",
     },
     "airport_checkin": {
         "name": "机场值机",

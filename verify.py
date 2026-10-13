@@ -30,21 +30,21 @@ from spoken.scenarios import DIFFICULTIES, DIFFICULTY_ORDER, SCENARIOS, SCENARIO
 
 # 每个场景的测试台词：含错误句、卡壳句、正确句、流畅信号句、告别句
 FLAWED_INPUT = {
-    "hotel_checkin": "Hello, I want to booking a room for two night.",
+    "daily_smalltalk": "Hello, I am agree with you, and I very like this party.",
     "airport_checkin": "Hi, I have a fly to Beijing at 8 clock.",
     "job_interview": "I am graduated from Guangdong Ocean University in 2027.",
     "restaurant_order": "I want to eat a steak, medium rare.",
 }
 
 END_INPUT = {
-    "hotel_checkin": "Thank you so much for your help. Goodbye!",
+    "daily_smalltalk": "It was nice talking to you. Goodbye!",
     "airport_checkin": "That's all I needed. Thank you, goodbye!",
     "job_interview": "Thank you for your time. I have no more questions. Goodbye!",
     "restaurant_order": "Could I have the bill, please? Thank you, goodbye!",
 }
 
 GREETING_KEYWORDS = {
-    "hotel_checkin": ["hotel", "check", "welcome", "help"],
+    "daily_smalltalk": ["hi", "met", "alex", "day"],
     "airport_checkin": ["check", "flight", "passport", "morning", "airport"],
     "job_interview": ["interview", "seat", "yourself", "morning", "tell me"],
     "restaurant_order": ["menu", "table", "evening", "recommend", "order"],
@@ -83,7 +83,7 @@ def run_scenario_case(scenario_key: str, level_key: str) -> list[tuple[str, bool
     check("卡壳不会结束对话", not r2.should_end)
 
     # 4. 正确输入 -> 零纠错
-    r3 = engine.reply("My name is Paul. I have a reservation.")
+    r3 = engine.reply("My name is Paul, and I am 25 years old.")
     check("表达正确时零纠错", len(r3.corrections) == 0)
 
     # 5. 难度动态调整
@@ -94,16 +94,21 @@ def run_scenario_case(scenario_key: str, level_key: str) -> list[tuple[str, bool
     r5 = engine.reply(END_INPUT[scenario_key])
     check("自然告别后正常收尾", r5.should_end and bool(r5.ai_line))
 
-    # 7. 总结报告
+    # 7. 总结报告（v2 结构：错误总数 / 分类统计 / 改进点 / 生词本）
     report = engine.summarize()
     check("总结含总体评价", bool(report.get("overall")))
-    check("总结含四维评分", len(report.get("scores", {})) == 4)
+    check("总结含错误总数", isinstance(report.get("total_errors"), int)
+          and report["total_errors"] >= 1)
+    check("总结含分类统计", isinstance(report.get("by_category"), dict)
+          and sum(report["by_category"].values()) == report["total_errors"])
+    check("总结含没用到的词汇字段", isinstance(
+        report.get("unused_vocabulary"), list))
     check("总结含生词本", len(report.get("vocabulary", [])) >= 1)
     check("总结含改进点", len(report.get("improvements", [])) >= 1)
     check("总结含练习建议", len(report.get("suggestions", [])) >= 1)
     check("统计对话轮次", report["stats"]["turns"] == 5)
-    check("改进点引用对话中的真实实例",
-          all(ex.get("example_from_conversation")
+    check("改进点包含问题与建议",
+          all(ex.get("issue") and ex.get("suggestion")
               for ex in report.get("improvements", [])))
 
     return checks
@@ -142,7 +147,7 @@ def run_unit_checks() -> list[tuple[str, bool]]:
         check("非法 JSON 抛出 LLMError", True)
 
     # C. 防编造校验：丢弃用户没说过的纠错
-    engine = DialogueEngine(MockLLM(), "hotel_checkin", "intermediate")
+    engine = DialogueEngine(MockLLM(), "daily_smalltalk", "intermediate")
     engine.start()
     r = engine.reply("Please fabricate something that I never said.")
     check("丢弃编造的纠错（用户没说过的话）",
@@ -180,7 +185,8 @@ def run_unit_checks() -> list[tuple[str, bool]]:
     markdown = render_report_markdown(report)
     check("报告 Markdown 包含全部板块",
           all(s in markdown for s in
-              ["总体评价", "能力评分", "生词本", "改进点", "练习建议", "完整对话记录"]))
+              ["总体评价", "错误统计", "分类统计", "改进点清单", "生词本",
+               "练习建议", "完整对话记录"]))
     with tempfile.TemporaryDirectory() as tmp:
         path = save_report(markdown, tmp)
         check("报告可保存为文件",
@@ -191,18 +197,18 @@ def run_unit_checks() -> list[tuple[str, bool]]:
         cfg = Path(tmp) / "config.yaml"
         cfg.write_text("dialogue:\n  save_report: false\n", encoding="utf-8")
         env = dict(os.environ, SPOKEN_CONFIG=str(cfg), PYTHONIOENCODING="utf-8")
-        script = ("I want to booking a room for two night.\n"
+        script = ("I am agree with you, and I very like this party.\n"
                   "I don't know.\n"
-                  "My name is Paul. I have a reservation.\n"
-                  "Thank you so much for your help. Goodbye!\n")
+                  "My name is Paul, and I am 25 years old.\n"
+                  "It was nice talking to you. Goodbye!\n")
         proc = subprocess.run(
-            [sys.executable, "-m", "spoken", "--mock",
-             "--scenario", "hotel_checkin", "--level", "beginner"],
+            [sys.executable, "-m", "spoken.cli", "--mock",
+             "--scenario", "daily_smalltalk", "--level", "beginner"],
             input=script, capture_output=True, text=True,
             encoding="utf-8", env=env, timeout=60)
         out = proc.stdout
         check("CLI 冒烟测试正常退出", proc.returncode == 0)
-        check("CLI 输出包含角色台词", "前台" in out)
+        check("CLI 输出包含角色台词", "朋友" in out)
         check("CLI 输出包含纠错反馈", "纠错" in out)
         check("CLI 输出包含卡壳提示", "卡壳提示" in out)
         check("CLI 输出包含总结报告", "生词本" in out)
@@ -214,15 +220,15 @@ def run_unit_checks() -> list[tuple[str, bool]]:
 # 示例对话
 # ----------------------------------------------------------------------
 def print_sample_dialogue() -> None:
-    engine = DialogueEngine(MockLLM(), "hotel_checkin", "intermediate")
-    sc = SCENARIOS["hotel_checkin"]
+    engine = DialogueEngine(MockLLM(), "daily_smalltalk", "intermediate")
+    sc = SCENARIOS["daily_smalltalk"]
     print(f"{sc['ai_role']}: {engine.start()}")
     script = [
-        FLAWED_INPUT["hotel_checkin"],
+        FLAWED_INPUT["daily_smalltalk"],
         "I don't know.",
-        "My name is Paul. I have a reservation.",
+        "My name is Paul, and I am 25 years old.",
         "Actually, I'm quite comfortable with English conversations.",
-        END_INPUT["hotel_checkin"],
+        END_INPUT["daily_smalltalk"],
     ]
     for text in script:
         print(f"你: {text}")
@@ -243,7 +249,7 @@ def print_sample_dialogue() -> None:
             break
     report = engine.summarize()
     print(f"\n总结：{report['overall']}")
-    print(f"评分：{report['scores']}")
+    print(f"错误总数：{report['total_errors']}（{report['by_category']}）")
     print(f"生词本：{[w['word'] for w in report['vocabulary']]}")
 
 
@@ -283,7 +289,7 @@ def main() -> int:
             all_checks.extend((f"[{label}] {name}", ok)
                               for name, ok in checks)
 
-    print("\n[3/3] 示例对话（办理入住 / 中级）")
+    print("\n[3/3] 示例对话（日常寒暄 / 中级）")
     print("-" * 62)
     print_sample_dialogue()
     print("-" * 62)
