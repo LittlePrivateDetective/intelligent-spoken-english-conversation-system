@@ -12,4 +12,4 @@ import os as _os
 # run.bat 中也会设置同样的环境变量，此处兜底保证任何启动方式生效。
 _os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"

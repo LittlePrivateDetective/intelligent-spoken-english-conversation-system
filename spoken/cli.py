@@ -12,7 +12,8 @@ from .config import load_config
 from .dialogue import DialogueEngine, TurnResult
 from .llm import LLMError, MockLLM, OpenAICompatibleLLM
 from .report import render_report_markdown, save_report
-from .scenarios import DIFFICULTIES, DIFFICULTY_ORDER, SCENARIOS, SCENARIO_ORDER
+from .scenarios import (DIFFICULTIES, DIFFICULTY_ORDER, list_scenario_keys,
+                     resolve_scenario)
 
 HELP_TEXT = """可用命令：
   /quit   结束对话并生成本次总结
@@ -54,9 +55,17 @@ def _choose(prompt: str, options: dict, order: list, labels: dict) -> str:
 
 
 def choose_scenario() -> str:
-    labels = {k: f"{v['name']}（{v['name_en']}）—— {v['summary']}"
-              for k, v in SCENARIOS.items()}
-    return _choose("请选择练习场景：", SCENARIOS, SCENARIO_ORDER, labels)
+    options: dict = {}
+    labels: dict = {}
+    for key in list_scenario_keys():
+        try:
+            v = resolve_scenario(key)
+        except ValueError:
+            continue
+        options[key] = v
+        tag = "✎ " if key.startswith("custom_") else ""
+        labels[key] = f"{tag}{v['name']}（{v['name_en']}）—— {v['summary']}"
+    return _choose("请选择练习场景：", options, list(options), labels)
 
 
 def choose_difficulty() -> str:
@@ -136,7 +145,7 @@ _SCORE_LABEL = {
 # 对话主循环
 # ----------------------------------------------------------------------
 def _run_dialogue(engine: DialogueEngine, max_turns: int) -> dict | None:
-    scenario = SCENARIOS[engine.scenario_key]
+    scenario = resolve_scenario(engine.scenario_key)
     difficulty = DIFFICULTIES[engine.difficulty]
     _out(f"\n场景：{scenario['name']}｜难度：{difficulty['name']}｜"
          f"你的角色：{scenario['user_role']}｜AI 角色：{scenario['ai_role']}")
@@ -223,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         description="智能英语口语对话练习程序（命令行）：选择场景和难度，"
                     "AI 扮演角色陪你练英语并实时纠错。")
     parser.add_argument("--config", help="配置文件路径（默认 ./config.yaml）")
-    parser.add_argument("--scenario", choices=SCENARIO_ORDER,
+    parser.add_argument("--scenario", choices=list_scenario_keys(),
                         help="跳过菜单，直接选择场景")
     parser.add_argument("--level", choices=DIFFICULTY_ORDER,
                         help="跳过菜单，直接选择难度")

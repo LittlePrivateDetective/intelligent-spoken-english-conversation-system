@@ -65,10 +65,11 @@ def run_scenario_case(scenario_key: str, level_key: str) -> list[tuple[str, bool
     greeting = engine.start()
     check("开场白是英语台词", bool(re.search(r"[A-Za-z]", greeting)))
     check("开场白贴合场景",
-          any(k in greeting.lower() for k in GREETING_KEYWORDS[scenario_key]))
+          any(k in greeting.lower() for k in GREETING_KEYWORDS.get(
+              scenario_key, ["hi", "hello", "nice", "meet"])))
 
     # 2. 带错误的输入 -> 纠错 + 替代表达
-    flawed = FLAWED_INPUT[scenario_key]
+    flawed = FLAWED_INPUT.get(scenario_key, "I am agree with you.")
     r1 = engine.reply(flawed)
     check("识别语法/用词错误", len(r1.corrections) >= 1)
     check("纠错原文逐字来自用户输入（未编造）",
@@ -91,7 +92,8 @@ def run_scenario_case(scenario_key: str, level_key: str) -> list[tuple[str, bool
     check("按用户水平动态提升难度", engine.difficulty == "advanced")
 
     # 6. 自然告别 -> 收尾
-    r5 = engine.reply(END_INPUT[scenario_key])
+    r5 = engine.reply(END_INPUT.get(
+        scenario_key, "It was nice talking to you. Goodbye!"))
     check("自然告别后正常收尾", r5.should_end and bool(r5.ai_line))
 
     # 7. 总结报告（v2 结构：错误总数 / 分类统计 / 改进点 / 生词本）

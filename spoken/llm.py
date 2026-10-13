@@ -6,7 +6,7 @@ import json
 
 import requests
 
-from .scenarios import DIFFICULTIES, SCENARIOS
+from .scenarios import DIFFICULTIES, SCENARIOS, resolve_scenario
 
 
 class LLMError(Exception):
@@ -150,20 +150,27 @@ class MockLLM:
                 return key
         return "intermediate"
 
+    def _tpl(self, scenario: str) -> str:
+        """Mock 模板仅预设 4 个内置场景；其余（新增 / 自定义）场景回退到
+        “日常寒暄”模板，保证离线测试与体验不崩。"""
+        return scenario if scenario in self._OPENINGS else "daily_smalltalk"
+
     # ------------------------------------------------------------------
     # 回复生成
     # ------------------------------------------------------------------
     def _opening(self, scenario: str, difficulty: str) -> dict:
-        return self._pack(next_line=self._OPENINGS[scenario], difficulty=difficulty)
+        return self._pack(next_line=self._OPENINGS[self._tpl(scenario)],
+                          difficulty=difficulty)
 
     def _turn(self, scenario: str, difficulty: str, user_text: str) -> dict:
         text = " ".join((user_text or "").lower().split())
         bare = text.rstrip(".!?，。！？")
+        s = self._tpl(scenario)
 
         # 0. 测试专用：诱导编造，用于验证引擎的防编造校验
         if "fabricate" in text:
             return self._pack(
-                next_line=self._FOLLOW_UPS[scenario][0],
+                next_line=self._FOLLOW_UPS[s][0],
                 difficulty=difficulty,
                 corrections=[{
                     "original": "the moon is made of cheese",
@@ -182,13 +189,13 @@ class MockLLM:
                 next_line="Take your time, it's okay.",
                 difficulty=difficulty,
                 stuck=True,
-                hint=self._HINTS[scenario],
+                hint=self._HINTS[s],
             )
 
         # 2. 告别：自然收尾
         if "bye" in text or "see you" in text:
             return self._pack(
-                next_line=self._CLOSINGS[scenario],
+                next_line=self._CLOSINGS[s],
                 difficulty=difficulty,
                 should_end=True,
                 end_reason="场景目标已达成，用户自然告别",
@@ -198,7 +205,7 @@ class MockLLM:
         corrections: list[dict] = []
         alternatives: list[str] = []
         new_words: list[dict] = []
-        for predicate, pack in self._TRIGGERS[scenario]:
+        for predicate, pack in self._TRIGGERS[s]:
             if predicate(text):
                 corrections.extend(pack["corrections"])
                 alternatives.extend(pack["alternatives"])
@@ -211,8 +218,8 @@ class MockLLM:
         # 5. 常规推进：循环使用场景台词，并补充生词
         index = self._followup_index.get(scenario, 0)
         self._followup_index[scenario] = index + 1
-        followups = self._FOLLOW_UPS[scenario]
-        pool = self._WORD_POOL[scenario]
+        followups = self._FOLLOW_UPS[s]
+        pool = self._WORD_POOL[s]
         new_words.append(pool[index % len(pool)])
 
         return self._pack(
@@ -224,7 +231,7 @@ class MockLLM:
         )
 
     def _summary(self, scenario: str, messages: list[dict]) -> dict:
-        sc = SCENARIOS[scenario]
+        sc = resolve_scenario(scenario)
         user_lines = [
             m["content"] for m in messages
             if m["role"] == "user"
@@ -239,7 +246,7 @@ class MockLLM:
                 "多说多练会越来越自然。"
             ),
             "scores": {"fluency": 7, "grammar": 6, "vocabulary": 6, "appropriateness": 7},
-            "vocabulary": self._WORD_POOL[scenario][:2],
+            "vocabulary": self._WORD_POOL[self._tpl(scenario)][:2],
             "improvements": [{
                 "issue": "动词形式与场景常用语",
                 "example_from_conversation": first_user,

@@ -22,6 +22,8 @@ from pathlib import Path
 
 import requests
 
+from .paths import app_data_dir, is_frozen
+
 DEFAULT_MIRROR = "https://hf-mirror.com"
 REPO_TEMPLATE = "Systran/faster-whisper-{size}"
 
@@ -38,10 +40,13 @@ class ModelDownloadError(RuntimeError):
 
 
 def default_model_dir() -> Path:
-    """模型存放目录：项目根目录下的 models/（可用 SPOKEN_MODEL_DIR 覆盖）。"""
+    """模型存放目录：冻结态（exe）在用户数据目录；源码态在项目根下的 models/
+    （均可用 SPOKEN_MODEL_DIR 环境变量覆盖）。"""
     env = os.environ.get("SPOKEN_MODEL_DIR")
     if env:
         return Path(env)
+    if is_frozen():
+        return app_data_dir() / "models"
     # 本文件位于 <项目根>/spoken/model_download.py，parents[1] 即项目根
     return Path(__file__).resolve().parents[1] / "models"
 

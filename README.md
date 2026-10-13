@@ -6,7 +6,7 @@
 
 ## 功能特性
 
-- **4 大场景 × 3 档难度**：日常寒暄 / 机场值机 / 英文面试 / 餐厅点餐；初级（A2）/ 中级（B1）/ 高级（C1）
+- **12 大场景 × 3 档难度**：日常寒暄 / 机场值机 / 英文面试 / 餐厅点餐 / 商务会议 / 旅行规划 / 酒店入住 / 购物沟通 / 就医问诊 / 电话沟通 / 观点讨论 / 校园生活；初级（A2）/ 中级（B1）/ 高级（C1）
 - **语音对话**：点击麦克风说话，本地语音识别（faster-whisper）转文字；AI 回复自动语音朗读（Windows 自带语音）
 - **实时纠错**：规则引擎 + AI 双通道，指出错误、说明原因、给出更地道表达；**没有错误时不硬凑反馈**
 - **动态难度**：根据每轮表现评估你的水平，自动调整用词和句法难度
@@ -19,6 +19,8 @@
 - **智能生词本**：对话或查词时一键收藏生词，自动生成词形变换、同词性对比、短语搭配，本地 SQLite 存储，支持搜索 / 排序 / 删除
 - **练习历史**：记录每次练习的日期 / 场景 / 难度 / 得分，提供历史列表与平均分趋势统计
 - **云端语音（可选）**：启用 DashScope CosyVoice 可获得更清晰音色与多语种口音；离线默认使用系统语音
+- **自定义场景**：内置 12 个场景之外，可自行创建专属场景（角色、设定、目标、识别热词），配置保存在本地、持久化复用
+- **自动更新检查**：启动后静默查询 GitHub Release，发现新版本时弹出非阻塞下载提示（限流与离线自动跳过）
 
 ## 安装
 
@@ -45,6 +47,19 @@ python -m venv .venv
 - `requirements.txt`：核心依赖（requests、PyYAML）
 - `[voice]`：语音能力（faster-whisper、sounddevice、pyttsx3）；**不装也能以纯文字模式运行**
 
+### 方式二：下载独立 exe（免 Python 环境）
+
+如果你不想安装 Python 与依赖，可以直接下载打包好的单文件 exe：
+
+1. 打开 [Releases 页面](https://github.com/LittlePrivateDetective/intelligent-spoken-english-conversation-system/releases)
+2. 在最新版本下找到 `spoken.exe`，下载到本地任意目录（如桌面）
+3. **双击 `spoken.exe` 即可运行**，无需安装任何环境
+4. 首次运行会在 `%APPDATA%\spoken` 下创建配置文件 `config.yaml` 与数据库；
+   语音识别模型会在首次对话时自动下载到该目录（约 150MB，需联网）
+
+> 想自己打包？在项目根目录双击 `build_exe.bat` 即可（需先安装完整依赖，
+> 产物为 `dist\spoken.exe`）。
+
 ### 4. 配置 API Key
 
 ```bash
@@ -61,6 +76,14 @@ copy config.example.yaml config.yaml
 | Ollama（本地模型） | `http://localhost:11434/v1` | `qwen2.5` 等，key 可随意填 |
 
 > `config.yaml` 含你的密钥，已被 `.gitignore` 排除，不会上传，请勿分享该文件。
+
+**配置文件与数据位置：**
+
+- 源码运行（`python -m spoken`）：配置与数据库写在项目根目录（`config.yaml` / `*.db` / `reports/`）。
+- 独立 exe 运行：写到用户数据目录 `%APPDATA%\spoken`（`config.yaml` / `*.db` /
+  `models/` / `reports/`），避免写入安装目录（如 `Program Files`）导致无权限。
+- 优先级：`--config` 参数 > `SPOKEN_CONFIG` 环境变量 > 当前目录 > `%APPDATA%\spoken`。
+- 自定义场景保存在 `custom_scenarios.json`（位置同上），不进入仓库、随机器持久化。
 
 ## 运行
 

@@ -9,6 +9,8 @@ config.yaml
 reports/
 practice_history.db
 vocab.db
+custom_scenarios.json
+.update_cache.json
 models/
 tts_debug.log
 _shot_*.png

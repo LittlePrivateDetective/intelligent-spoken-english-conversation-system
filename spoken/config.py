@@ -12,6 +12,8 @@ from pathlib import Path
 
 import yaml
 
+from .paths import is_frozen, user_data_dir
+
 DEFAULT_CONFIG: dict = {
     "llm": {
         # 任何 OpenAI 兼容接口都可以：OpenAI / DeepSeek / Moonshot / 通义 / Ollama 等
@@ -120,22 +122,33 @@ def _apply_env(data: dict) -> dict:
 
 
 def find_config_file(explicit: str | None = None) -> Path | None:
+    """定位 config.yaml。
+
+    优先级：--config 参数 > SPOKEN_CONFIG 环境变量 > 当前目录 config.yaml >
+    冻结态（exe）下的用户数据目录 config.yaml。返回值要么是已存在的文件，
+    要么是推荐写入路径（用户数据目录），保证 exe 在 Program Files 下也能配置。
+    """
     candidates: list[Path] = []
     if explicit:
         candidates.append(Path(explicit))
     if os.environ.get("SPOKEN_CONFIG"):
         candidates.append(Path(os.environ["SPOKEN_CONFIG"]))
     candidates.append(Path("config.yaml"))
+    if is_frozen():
+        candidates.append(user_data_dir() / "config.yaml")
     for path in candidates:
         if path.is_file():
             return path
-    return None
+    # 没有已存在的文件时，返回推荐写入位置（冻结态 → 用户数据目录）
+    return user_data_dir() / "config.yaml" if is_frozen() else Path("config.yaml")
 
 
 def load_config(explicit_path: str | None = None) -> Config:
     path = find_config_file(explicit_path)
     data = DEFAULT_CONFIG
-    if path is not None:
+    # find_config_file 找不到任何已存在文件时会返回"推荐写入路径"（文件尚不存在，
+    # 例如朋友第一次运行 exe），此时直接用默认配置，绝不能 open() 否则崩溃。
+    if path is not None and path.is_file():
         with open(path, "r", encoding="utf-8") as fh:
             user_data = yaml.safe_load(fh) or {}
         data = _deep_merge(DEFAULT_CONFIG, user_data)

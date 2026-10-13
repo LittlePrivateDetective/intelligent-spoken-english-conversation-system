@@ -11,10 +11,11 @@ import json
 import sqlite3
 from pathlib import Path
 
+from .paths import data_file
 from .vocab_model import VocabEntry
 
-# 默认数据库文件放在项目根目录（与练习历史库并列）
-DEFAULT_DB = Path(__file__).resolve().parent.parent / "vocab.db"
+# 默认数据库文件：源码态在项目根，冻结态（exe）在用户数据目录
+DEFAULT_DB = data_file("vocab.db")
 
 
 def _connect(db_path) -> sqlite3.Connection:

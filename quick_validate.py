@@ -20,7 +20,9 @@ from spoken.asr import asr_available, mic_available
 from spoken.corrector import CATEGORY_NAMES, RuleCorrector
 from spoken.dialogue import DialogueEngine
 from spoken.llm import MockLLM
-from spoken.scenarios import DIFFICULTIES, DIFFICULTY_ORDER, SCENARIOS, SCENARIO_ORDER
+from spoken.scenarios import (DIFFICULTIES, DIFFICULTY_ORDER, SCENARIOS,
+                          SCENARIO_ORDER, is_custom, list_scenario_keys,
+                          resolve_hotwords, resolve_scenario)
 from spoken.tts import tts_available
 from spoken import accents, cloud_tts, assessor, history
 from spoken.asr import MicRecorder
@@ -28,6 +30,7 @@ from spoken.config import load_config
 from spoken.vocab_model import VocabEntry
 from spoken.vocab_gen import VocabGenerator
 from spoken.vocab_store import count_words, delete_word, list_words, save_word
+from spoken import custom_scenarios
 
 PASS, FAIL = 0, 0
 RESULTS: list[tuple[str, bool, str]] = []
@@ -383,7 +386,7 @@ def test_gui() -> None:
     section("9. GUI 窗口构建冒烟测试")
     try:
         import tkinter as tk
-        from spoken.gui import SpokenApp
+        from spoken.gui import C_BUBBLE_AI, C_BUBBLE_USER, SpokenApp
 
         root = tk.Tk()
         app = SpokenApp(root)
@@ -393,8 +396,31 @@ def test_gui() -> None:
         check("GUI 正常构建（欢迎页）", True)
         check("页面包含 welcome/setup/chat 三页",
               set(app._pages) == {"welcome", "setup", "chat"})
-        check("场景卡片有 4 个场景", len(app._scenario_cards) == 4)
+        check("场景卡片为 12 内置 + 1 自定义入口",
+              len(app._scenario_cards) == 13)
+        real_cards = [c for c in app._scenario_cards if not c.add_card]
+        check("内置场景卡片为 12 个", len(real_cards) == 12)
+        check("末尾为『自定义场景』入口卡",
+              app._scenario_cards[-1].add_card is True)
         check("难度选项有 3 个难度", len(app._difficulty_btns) == 3)
+        # 进入设置页并做布局回归：底部操作栏与难度行必须固定可见，
+        # 场景卡片区必须可滚动。
+        # （曾经的 bug：12+1 张卡片内容超高且无滚动区，底部『开始对话』
+        #   被 pack 挤成 1px 移出屏幕，用户选完场景找不到入口）
+        app._show_page("setup")
+        root.update()
+        check("设置页『开始对话』按钮可见且高度正常",
+              app._start_btn.winfo_ismapped()
+              and app._start_btn.winfo_height() > 15)
+        check("设置页难度选项全部可见",
+              all(p.winfo_ismapped() and p.winfo_height() > 15
+                  for p in app._difficulty_btns))
+        bbox = app._setup_canvas.bbox("all")
+        check("场景区内容超过视口时滚动区生效",
+              bbox is not None
+              and bbox[3] > app._setup_canvas.winfo_height())
+        check("滚轮绑定已挂到场景卡片",
+              bool(app._scenario_cards[0].bind("<MouseWheel>")))
         # 进入对话页（不启动真实会话，仅验证布局）
         app._show_page("chat")
         root.update()
@@ -409,6 +435,47 @@ def test_gui() -> None:
         check("发送按钮可见且高度正常",
               app.send_btn.winfo_ismapped()
               and app.send_btn.winfo_height() > 15)
+        # 气泡对话 + 打字机效果回归
+        # （曾经的样式：纯文字行、无气泡、台词一次性显示）
+        def _hidden_chars(chat):
+            """统计仍处于 pending（elide 隐藏）状态的字符数。"""
+            ranges = chat.tag_ranges("pending")
+            total = 0
+            for i in range(0, len(ranges), 2):
+                c = chat.count(str(ranges[i]), str(ranges[i + 1]), "chars")
+                total += int(c[0] if isinstance(c, tuple) else c)
+            return total
+
+        app._show_ai_line("Hello there, this is a typing test.")
+        hidden0 = _hidden_chars(app.chat)
+        check("AI 台词逐字弹出（台词初始处于隐藏态）", hidden0 > 0)
+        for _ in range(3):        # 手动推进 3 拍（每拍揭示 2 字符）
+            app._typewriter_tick()
+        hidden1 = _hidden_chars(app.chat)
+        check("每拍揭示部分文字", 0 < hidden1 < hidden0)
+        check("揭示内容可见", "Hell" in app.chat.get("1.0", tk.END))
+        app._finish_typewriter()
+        check("补全后全部显示（无隐藏残留）",
+              _hidden_chars(app.chat) == 0)
+        check("完整台词内容正确",
+              "Hello there, this is a typing test.\n"
+              in app.chat.get("1.0", tk.END))
+        # 打断：用户消息到来时立即补全未打完的 AI 台词
+        app._show_ai_line("Second line for interruption test.")
+        app._typewriter_tick()
+        app._append_chat("user", "你", "打断一下")
+        check("新消息到来时自动补全未打完的台词",
+              "interruption test." in app.chat.get("1.0", tk.END))
+        check("打断后无隐藏残留", _hidden_chars(app.chat) == 0)
+        check("AI 消息为气泡（有背景色）",
+              app.chat.tag_cget("ai", "background") == C_BUBBLE_AI)
+        check("用户消息为气泡（有背景色）",
+              app.chat.tag_cget("user", "background") == C_BUBBLE_USER)
+        check("提示/纠错无气泡背景",
+              app.chat.tag_cget("feedback", "background") == "")
+        ai_size = int(app.chat.tag_cget("ai", "font").rsplit(" ", 1)[1])
+        fb_size = int(app.chat.tag_cget("feedback", "font").rsplit(" ", 1)[1])
+        check("对话字体大于提示/纠错字体", ai_size > fb_size)
         # 录音球体动画冒烟：启动 + 推进一帧 + 停止
         app._orb_start()
         app._orb.set_level(0.6)
@@ -686,9 +753,94 @@ def test_vocab() -> None:
             pass
 
 
+def test_custom_scenarios() -> None:
+    section("11. 自定义场景：读写 / 解析层回退 / 增删改")
+    import json
+    import os
+    import tempfile
+
+    tmp = os.path.join(tempfile.gettempdir(), f"spoken_cust_{os.getpid()}.json")
+    custom_scenarios.set_storage_path(tmp)
+    try:
+        check("初始无自定义场景", custom_scenarios.load() == {})
+        key1 = custom_scenarios.upsert({
+            "name": "测试场景", "name_en": "Test Scenario",
+            "summary": "单元测试用", "ai_role": "测试AI", "user_role": "测试用户",
+            "setting": "测试设定", "goals": "测试目标", "hotwords": "test keyword"})
+        check("upsert 返回 custom_ 前缀 key", key1.startswith("custom_"))
+        data = custom_scenarios.load()
+        check("load 读回自定义场景",
+              key1 in data and data[key1]["name"] == "测试场景")
+        sc = resolve_scenario(key1)
+        check("resolve_scenario 解析自定义场景",
+              sc["name"] == "测试场景" and sc["ai_role"] == "测试AI")
+        check("is_custom 识别自定义 key", is_custom(key1))
+        check("list_scenario_keys 含自定义", key1 in list_scenario_keys())
+        check("resolve_hotwords 取自定义热词",
+              resolve_hotwords(key1) == "test keyword")
+        # 编辑更新（同 key 不新增）
+        custom_scenarios.upsert({"key": key1, "name": "改名场景",
+            "name_en": "Renamed", "summary": "s", "ai_role": "a",
+            "user_role": "u", "setting": "st", "goals": "g"})
+        reloaded = custom_scenarios.load()
+        check("upsert 同 key 更新不新增",
+              len(reloaded) == 1 and reloaded[key1]["name"] == "改名场景")
+        # 删除
+        check("delete 自定义场景", custom_scenarios.delete(key1) is True)
+        check("删除后不存在", key1 not in custom_scenarios.load())
+        # 脏数据容错：损坏 JSON 返回空 dict 而非崩溃
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write("{not valid json")
+        check("损坏文件容错返回空字典", custom_scenarios.load() == {})
+    finally:
+        custom_scenarios.set_storage_path(None)
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+
+
+def test_updater() -> None:
+    section("12. 自动更新检查：版本解析与比较")
+    from spoken import updater
+    check("解析 v1.2.3 -> (1,2,3)", updater.parse_version("v1.2.3") == (1, 2, 3))
+    check("解析 2.0 -> (2,0)", updater.parse_version("2.0") == (2, 0))
+    check("v1.1.0 比 v1.0.0 新", updater.is_newer("v1.1.0", "1.0.0"))
+    check("v1.0.0 不比 v1.1.0 新", not updater.is_newer("v1.0.0", "1.1.0"))
+    check("v2.0.0 比 v1.9.9 新", updater.is_newer("v2.0.0", "1.9.9"))
+    check("相同版本不视为更新", not updater.is_newer("v1.1.0", "1.1.0"))
+
+
+def test_config_resilience() -> None:
+    """exe 新环境（无任何 config.yaml）不得崩溃：load_config 容错。"""
+    print("\n[测试] 配置容错（模拟朋友首次运行 exe）")
+    import os
+    import tempfile
+    from pathlib import Path
+    from spoken import config as cfg_mod
+
+    missing = Path(tempfile.mkdtemp()) / "config.yaml"
+    old = os.environ.get("SPOKEN_CONFIG")
+    old_cwd = os.getcwd()
+    try:
+        # 候选链：SPOKEN_CONFIG > 当前目录 config.yaml > 用户数据目录，
+        # 所以要把工作目录一并切走，才能模拟"全新电脑无任何配置"
+        os.environ["SPOKEN_CONFIG"] = str(missing)
+        os.chdir(missing.parent)
+        c = cfg_mod.load_config()
+        check("无配置文件时返回默认配置（不崩溃）", c.api_key == "")
+        check("默认模型存在", bool(c.model))
+    finally:
+        if old is None:
+            os.environ.pop("SPOKEN_CONFIG", None)
+        else:
+            os.environ["SPOKEN_CONFIG"] = old
+        os.chdir(old_cwd)
+
+
 def main() -> int:
     print("spoken v2 quick_validate —— 离线验证（MockLLM，无需 API Key）")
-    print(f"场景：{'、'.join(SCENARIOS[k]['name'] for k in SCENARIO_ORDER)}")
+    print(f"场景：{'、'.join(resolve_scenario(k)['name'] for k in list_scenario_keys())}")
     print(f"难度：{'、'.join(DIFFICULTIES[k]['name'] for k in DIFFICULTY_ORDER)}")
     print("\n语音组件可用性（不影响验证结果）：")
     print(f"  语音识别 faster-whisper：{'可用' if asr_available() else '未安装（纯文字模式）'}")
@@ -704,8 +856,11 @@ def main() -> int:
     test_transcribe_ndarray_path()
     test_asr_error_hint()
     test_gui()
+    test_config_resilience()
     test_new_features()
     test_vocab()
+    test_custom_scenarios()
+    test_updater()
 
     total = PASS + FAIL
     print(f"\n{'═' * 56}")

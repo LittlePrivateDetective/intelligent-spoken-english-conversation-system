@@ -13,13 +13,17 @@ from datetime import datetime
 from pathlib import Path
 
 from .corrector import CATEGORY_NAMES
-from .scenarios import DIFFICULTIES, SCENARIOS
+from .scenarios import DIFFICULTIES, resolve_scenario
 
 
 def render_report_markdown(report: dict) -> str:
     """把总结 dict 渲染成 Markdown 文本。"""
     stats = report.get("stats", {}) or {}
-    scenario = SCENARIOS.get(stats.get("scenario", ""), {})
+    scn_key = stats.get("scenario", "")
+    try:
+        scenario = resolve_scenario(scn_key)
+    except ValueError:
+        scenario = {}
     difficulty = DIFFICULTIES.get(stats.get("difficulty", ""), {})
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -149,8 +153,14 @@ def render_summary_text(report: dict) -> str:
 
 
 def save_report(markdown: str, report_dir: str) -> Path:
-    """把报告 Markdown 保存到 report_dir，返回文件路径。"""
+    """把报告 Markdown 保存到 report_dir，返回文件路径。
+
+    相对路径在冻结态（exe）下解析到用户数据目录，避免写 Program Files 失败。
+    """
+    from .paths import user_data_dir
     directory = Path(report_dir)
+    if not directory.is_absolute():
+        directory = user_data_dir() / report_dir
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"spoken_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
     path.write_text(markdown, encoding="utf-8")

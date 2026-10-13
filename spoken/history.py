@@ -12,9 +12,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from .paths import data_file
 
-# 默认数据库文件放在项目根目录
-DEFAULT_DB = Path(__file__).resolve().parent.parent / "practice_history.db"
+
+# 默认数据库文件：源码态在项目根，冻结态（exe）在用户数据目录
+DEFAULT_DB = data_file("practice_history.db")
 
 
 def _connect(db_path) -> sqlite3.Connection:
