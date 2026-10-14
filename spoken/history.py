@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -84,11 +84,14 @@ class Stats:
     avg_accuracy: float
     avg_integrity: float
     avg_fluency: float
-    trend: list  # [(date_str, avg_overall), ...] 按日期升序
+    trend: list  # [(date_str, avg_overall), ...] 按日期升序（兼容旧字段）
+    trends: dict = field(default_factory=dict)
+    # trends: {"overall": [(day, val)], "accuracy": [...], "integrity": [...],
+    #          "fluency": [...]} 分维度趋势，供多折线图使用
 
 
 def stats(db_path) -> Stats:
-    """统计：总次数、各维度平均分、按日期的平均总分趋势。"""
+    """统计：总次数、各维度平均分、按日期的平均分趋势（总分 + 三个分维度）。"""
     conn = _connect(db_path)
     try:
         rows = conn.execute(
@@ -98,16 +101,24 @@ def stats(db_path) -> Stats:
             "SELECT substr(ts, 1, 10) AS day, AVG(overall) "
             "FROM sessions GROUP BY day ORDER BY day ASC"
         ).fetchall()
+        dim_rows = {}
+        for dim in ("overall", "accuracy", "integrity", "fluency"):
+            dim_rows[dim] = conn.execute(
+                f"SELECT substr(ts, 1, 10) AS day, AVG({dim}) "
+                "FROM sessions GROUP BY day ORDER BY day ASC"
+            ).fetchall()
     finally:
         conn.close()
 
     n = len(rows)
     if n == 0:
-        return Stats(0, 0.0, 0.0, 0.0, 0.0, [])
+        return Stats(0, 0.0, 0.0, 0.0, 0.0, [], {k: [] for k in dim_rows})
     avg_overall = sum(r[0] or 0 for r in rows) / n
     avg_accuracy = sum(r[1] or 0 for r in rows) / n
     avg_integrity = sum(r[2] or 0 for r in rows) / n
     avg_fluency = sum(r[3] or 0 for r in rows) / n
     trend = [(day, round(avg, 1)) for day, avg in trend_rows]
+    trends = {dim: [(day, round(avg, 1)) for day, avg in rows_]
+              for dim, rows_ in dim_rows.items()}
     return Stats(n, round(avg_overall, 1), round(avg_accuracy, 1),
-                 round(avg_integrity, 1), round(avg_fluency, 1), trend)
+                 round(avg_integrity, 1), round(avg_fluency, 1), trend, trends)

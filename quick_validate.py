@@ -386,7 +386,8 @@ def test_gui() -> None:
     section("9. GUI 窗口构建冒烟测试")
     try:
         import tkinter as tk
-        from spoken.gui import C_BUBBLE_AI, C_BUBBLE_USER, SpokenApp
+        import spoken.gui as gui_mod
+        from spoken.gui import SpokenApp
 
         root = tk.Tk()
         app = SpokenApp(root)
@@ -394,8 +395,8 @@ def test_gui() -> None:
         root.after(150, root.quit)
         root.mainloop()  # 等布局稳定后再断言
         check("GUI 正常构建（欢迎页）", True)
-        check("页面包含 welcome/setup/chat 三页",
-              set(app._pages) == {"welcome", "setup", "chat"})
+        check("页面包含 welcome/setup/chat/shadow 四页",
+              set(app._pages) == {"welcome", "setup", "chat", "shadow"})
         check("场景卡片为 12 内置 + 1 自定义入口",
               len(app._scenario_cards) == 13)
         real_cards = [c for c in app._scenario_cards if not c.add_card]
@@ -467,10 +468,13 @@ def test_gui() -> None:
         check("新消息到来时自动补全未打完的台词",
               "interruption test." in app.chat.get("1.0", tk.END))
         check("打断后无隐藏残留", _hidden_chars(app.chat) == 0)
+        # 注意：读 gui_mod.C_BUBBLE_AI 而非快照 import——SpokenApp 会按
+        # config.ui.theme 调用 _apply_theme_colors() 改写模块 globals，
+        # 快照值在深色主题下会过期（曾因用户 config theme=dark 偶发失败）。
         check("AI 消息为气泡（有背景色）",
-              app.chat.tag_cget("ai", "background") == C_BUBBLE_AI)
+              app.chat.tag_cget("ai", "background") == gui_mod.C_BUBBLE_AI)
         check("用户消息为气泡（有背景色）",
-              app.chat.tag_cget("user", "background") == C_BUBBLE_USER)
+              app.chat.tag_cget("user", "background") == gui_mod.C_BUBBLE_USER)
         check("提示/纠错无气泡背景",
               app.chat.tag_cget("feedback", "background") == "")
         ai_size = int(app.chat.tag_cget("ai", "font").rsplit(" ", 1)[1])
@@ -800,6 +804,479 @@ def test_custom_scenarios() -> None:
             pass
 
 
+def test_i18n_theme() -> None:
+    section("13. 多语言与主题：i18n 切换 / 双调色板 / 界面偏好")
+    import os
+    import tempfile
+    from spoken import i18n, theme
+
+    # -- i18n：中文即键名，英文查表，缺失回退 --
+    check("默认中文原样返回", i18n.t("开始对话") == "开始对话")
+    check("支持中英两种语言", set(i18n.LANGUAGES) == {"zh", "en"})
+    i18n.set_language("en")
+    check("切换英文返回译文",
+          i18n.t("开始对话") == "Start Conversation")
+    check("缺失键回退中文原文", i18n.t("不存在的文案xyz") == "不存在的文案xyz")
+    check("模板占位符格式化",
+          i18n.t("出现错误：{exc}", exc="boom") == "Something went wrong: boom")
+    seen: list = []
+    i18n.on_change(seen.append)
+    check("切换回调被触发", i18n.set_language("zh") and seen == ["zh"])
+    i18n.off_change(seen.append)
+    i18n.set_language("zh")
+
+    # -- theme：浅/深双调色板，键名齐全 --
+    check("提供浅色与深色两套主题",
+          set(theme.available_themes()) == {"light", "dark"})
+    light, dark = theme.palette("light"), theme.palette("dark")
+    check("调色板键名齐全（两套一致）",
+          set(light) == set(dark) == set(theme.PALETTE_KEYS))
+    check("深色背景确实更深", light["bg"] != dark["bg"])
+    check("未知主题名回退浅色", theme.palette("nope") is light)
+
+    # -- config：ui 段默认值 --
+    from spoken.config import load_config
+    cfg = load_config()
+    check("配置含界面语言字段", cfg.ui_language in ("zh", "en"))
+    check("配置含主题字段", cfg.ui_theme in ("light", "dark"))
+    check("配置含窗口几何字段", isinstance(cfg.window_geometry, str))
+
+    # -- GUI：英文 + 深色下完整构建并切换重建（临时目录隔离 config）--
+    try:
+        import tkinter as tk
+        import spoken.gui as gui_mod
+        from spoken.gui import SpokenApp
+
+        old_cwd = os.getcwd()
+        tmp = tempfile.mkdtemp(prefix="spoken_i18n_")
+        os.chdir(tmp)
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            app = SpokenApp(root)
+            check("默认（中文/浅色）构建含四页",
+                  set(app._pages) == {"welcome", "setup", "chat", "shadow"})
+            app._apply_ui_preference("language", "en")
+            check("切换英文后界面重建且语言生效",
+                  i18n.get_language() == "en"
+                  and set(app._pages) == {"welcome", "setup", "chat", "shadow"})
+            app._apply_ui_preference("theme", "dark")
+            check("切换深色后背景色来自深色调色板",
+                  gui_mod.C_BG == dark["bg"])
+            check("偏好已持久化到 config.yaml",
+                  os.path.isfile("config.yaml"))
+            app._apply_ui_preference("language", "zh")
+            root.destroy()
+        finally:
+            os.chdir(old_cwd)
+    except Exception as exc:
+        check(f"GUI 多语言/主题构建（异常 {exc}）", False)
+
+
+# ----------------------------------------------------------------------
+# 16. 语音设置 UX：X 关闭=应用 / 取消=放弃 / 场景图标单色化
+# ----------------------------------------------------------------------
+def test_voice_settings_ux() -> None:
+    section("16. 语音设置 UX：关闭窗口=应用 / 取消=放弃 / 图标单色化")
+    try:
+        import os
+        import tempfile
+        import tkinter as tk
+        import spoken.gui as gui_mod
+        from spoken.gui import ScenarioCard, SpokenApp, _mono_icon
+
+        # -- _mono_icon：emoji 转文本呈现（深色主题下随 fill 变白）--
+        check("💬 转为文本呈现（FE0E）", _mono_icon("💬") == "💬\ufe0e")
+        check("✈️ 去 FE0F 再加 FE0E", _mono_icon("✈️") == "✈\ufe0e")
+        check("🛍️ 去 FE0F 再加 FE0E", _mono_icon("🛍️") == "🛍\ufe0e")
+
+        old_cwd = os.getcwd()
+        tmp = tempfile.mkdtemp(prefix="spoken_vux_")
+        os.chdir(tmp)
+        # 屏蔽真实扬声器：避免测试过程中真的发声
+        real_speaker = gui_mod.Speaker
+
+        class _SilentSpeaker:
+            available = False
+
+            def __init__(self, *a, **k):
+                pass
+
+            def stop(self):
+                pass
+
+            def speak(self, *a, **k):
+                pass
+
+        gui_mod.Speaker = _SilentSpeaker
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            app = SpokenApp(root)
+
+            def walk(w):
+                yield w
+                for c in w.winfo_children():
+                    yield from walk(c)
+
+            def dialog():
+                for w in root.winfo_children():
+                    if isinstance(w, tk.Toplevel) and w.winfo_exists():
+                        return w
+                return None
+
+            def radios(dlg, values):
+                return [w for w in walk(dlg)
+                        if isinstance(w, tk.Radiobutton)
+                        and w.cget("value") in values]
+
+            def sel(rs):
+                return root.globalgetvar(rs[0].cget("variable"))
+
+            def pill(dlg, text):
+                return [w for w in walk(dlg)
+                        if isinstance(w, gui_mod.PillButton)
+                        and w.text == text]
+
+            def close_x(dlg):
+                """模拟用户点窗口右上角 X：触发 WM_DELETE_WINDOW 处理器。"""
+                cmd = dlg.protocol("WM_DELETE_WINDOW")
+                assert cmd, "WM_DELETE_WINDOW 未注册处理器"
+                root.tk.call(cmd)
+
+            SPEEDS = ("slow", "medium", "fast")
+            ACCENTS = {"en-US", "en-GB"}
+
+            # 场景卡片图标：位图单色渲染 + 颜色取主题文字色（深色下随文字变白）
+            holder = tk.Frame(root)
+            card = ScenarioCard(holder, "daily_smalltalk", 0, lambda i: None)
+            icon = [i for i in card.find_all() if card.type(i) == "image"]
+            check("场景卡片图标为位图单色呈现", len(icon) == 1)
+            check("场景卡片图标水平居中于 x=34",
+                  bool(icon) and abs(card.coords(icon[0])[0] - 34) <= 1)
+            holder.destroy()
+
+            # 基线配置
+            app._save_config_patch({"voice": {"tts_speed": "medium"},
+                                    "cloud_tts": {"accent": "en-US"}})
+            app.cfg = gui_mod.load_config()
+
+            # 1) 改语速 -> X 关闭 -> 重开保持（用户反馈的丢设置问题）
+            app._open_voice_settings()
+            dlg = dialog()
+            dlg.withdraw()
+            for r in radios(dlg, SPEEDS):
+                if r.cget("value") == "fast":
+                    r.invoke()
+            close_x(dlg)
+            check("X 关闭应用语速修改（写盘）", app.cfg.tts_speed == "fast")
+            app._open_voice_settings()
+            dlg = dialog()
+            dlg.withdraw()
+            check("重开对话框语速保持 fast",
+                  sel(radios(dlg, SPEEDS)) == "fast")
+            dlg.destroy()
+
+            # 2) 改语速 -> 「取消」-> 放弃修改
+            app._save_config_patch({"voice": {"tts_speed": "medium"}})
+            app.cfg = gui_mod.load_config()
+            app._open_voice_settings()
+            dlg = dialog()
+            dlg.withdraw()
+            for r in radios(dlg, SPEEDS):
+                if r.cget("value") == "fast":
+                    r.invoke()
+            btns = pill(dlg, "取消")
+            check("对话框提供「取消」按钮", len(btns) == 1)
+            btns[0].command()
+            app._open_voice_settings()
+            dlg = dialog()
+            dlg.withdraw()
+            check("取消后重开回到 medium",
+                  sel(radios(dlg, SPEEDS)) == "medium")
+            dlg.destroy()
+
+            # 3) 改口音 -> X 关闭 -> 重开保持
+            app._open_voice_settings()
+            dlg = dialog()
+            dlg.withdraw()
+            for r in radios(dlg, ACCENTS):
+                if r.cget("value") == "en-GB":
+                    r.invoke()
+            close_x(dlg)
+            check("X 关闭应用口音修改（写盘）",
+                  (app.cfg.cloud_tts or {}).get("accent") == "en-GB")
+            app._open_voice_settings()
+            dlg = dialog()
+            dlg.withdraw()
+            check("重开对话框口音保持 en-GB",
+                  sel(radios(dlg, ACCENTS)) == "en-GB")
+            dlg.destroy()
+
+            # 4) 无变化时 X 关闭：静默，不写盘
+            mtime = os.path.getmtime("config.yaml")
+            app._open_voice_settings()
+            dlg = dialog()
+            dlg.withdraw()
+            close_x(dlg)
+            check("无变化时 X 关闭不写盘",
+                  os.path.getmtime("config.yaml") == mtime)
+
+            root.destroy()
+        finally:
+            gui_mod.Speaker = real_speaker
+            os.chdir(old_cwd)
+    except Exception as exc:
+        check(f"语音设置 UX（异常 {exc}）", False)
+
+
+# ----------------------------------------------------------------------
+# 17. 图标位图化：Pillow 预渲染单色图标（规避 Tk emoji 字体回退错位）
+# ----------------------------------------------------------------------
+def test_icon_bitmaps() -> None:
+    section("17. 图标位图化：Pillow 单色渲染 / 位置精确 / 回退路径")
+    try:
+        import tkinter as tk
+        import spoken.icons as icons
+        from spoken.gui import ScenarioCard
+
+        # -- icons 模块本身 --
+        check("mono() 去掉变体选择符", icons.mono("✈️") == "✈")
+        check("mono() 去 FE0E", icons.mono("💬\ufe0e") == "💬")
+
+        if icons.available():
+            root = tk.Tk()
+            root.withdraw()
+            img = icons.icon("📊", 24, "#E8EDF5", master=root)
+            check("icon() 返回 PhotoImage", img is not None)
+            check("位图尺寸 = 字号 + 2*2 边距",
+                  img is not None and img.width() == 28
+                  and img.height() == 28)
+            check("同参缓存命中（同一对象）",
+                  icons.icon("📊", 24, "#E8EDF5", master=root) is img)
+            check("颜色变化生成新位图",
+                  icons.icon("📊", 24, "#000000", master=root) is not img)
+            check("生僻字符不抛异常",
+                  icons.icon("\U000E0000", 24, "#FFFFFF",
+                             master=root) is not None)
+
+            # -- 场景卡片：图标必须是 image 且水平居中于 x=34 --
+            holder = tk.Frame(root)
+            all_ok = True
+            for key in ("daily_smalltalk", "airport_checkin",
+                        "job_interview", "restaurant_order",
+                        "business_meeting", "travel", "hotel", "shopping",
+                        "hospital", "phone_call", "opinion", "campus"):
+                card = ScenarioCard(holder, key, 0, lambda i: None)
+                items = [i for i in card.find_all()
+                         if card.type(i) == "image"]
+                if len(items) != 1:
+                    all_ok = False
+                    print(f"  {key}: image items = {len(items)}")
+                    continue
+                x, _y = card.coords(items[0])
+                bb = card.bbox(items[0])
+                if abs(x - 34) > 1 or bb[0] < -1 or bb[2] > card._bw + 1:
+                    all_ok = False
+                    print(f"  {key}: x={x:.1f} bbox={bb}")
+                card.destroy()
+            check("12 个场景卡片各有 1 个位图图标且居中不出界", all_ok)
+
+            add = ScenarioCard(holder, "", 0, lambda i: None, add_card=True)
+            check("自定义入口卡（➕）使用位图",
+                  len([i for i in add.find_all()
+                       if add.type(i) == "image"]) == 1)
+            add.destroy()
+            holder.destroy()
+            root.destroy()
+        else:
+            check("Pillow/符号字体不可用（跳过位图断言，走回退）", True)
+
+        # -- 场景图标表：字形必须在符号字体中真实存在 --
+        from spoken import gui as gui_mod
+        check("travel 图标为地图字符", gui_mod._SCENARIO_ICONS["travel"] == "\U0001F5FA")
+        check("hotel 图标为床字符", gui_mod._SCENARIO_ICONS["hotel"] == "\U0001F6CF")
+
+        # -- 回退路径字体（无 Pillow 时）--
+        src = open("spoken/gui.py", encoding="utf-8").read()
+        check("回退路径使用 Segoe UI Symbol（天然单色）",
+              '"Segoe UI Symbol"' in src)
+        check("绘制统一走 _draw_icon helper", src.count("_draw_icon(") >= 5)
+    except Exception as exc:
+        check(f"图标位图化（异常 {exc}）", False)
+
+
+def test_shadow_and_review() -> None:
+    section("14. 跟读专项练习 / 评分趋势 / 复习排期")
+    import os
+    import tempfile
+    from spoken.llm import MockLLM
+    from spoken.shadow import (RETRY_THRESHOLD, ShadowSession,
+                               generate_sentences)
+
+    class _FakeScore:
+        def __init__(self, overall):
+            self.overall = overall
+            self.accuracy = self.integrity = self.fluency = 80.0
+            self.feedback = ""
+
+    sentences = generate_sentences(MockLLM(), "restaurant_order",
+                                   "intermediate", 5)
+    check("MockLLM 生成 5 句跟读句子", len(sentences) == 5 and all(sentences))
+
+    s = ShadowSession("restaurant_order", "intermediate", sentences[:2])
+    check("初始队列 2 句", s.progress == (0, 2))
+    check("高分进入下一句", s.submit(_FakeScore(90)) == "next")
+    check("低分自动重练", s.submit(_FakeScore(RETRY_THRESHOLD - 1)) == "retry"
+          and s.retry_count == 1)
+    check("重练仍低分继续重练（未超 2 次）",
+          s.submit(_FakeScore(50)) == "retry" and s.retry_count == 2)
+    check("第三次低分不再重练（达上限）",
+          s.submit(_FakeScore(50)) == "finished")
+    s2 = ShadowSession("restaurant_order", "intermediate", sentences[:2])
+    s2.submit(_FakeScore(90))
+    s2.submit(_FakeScore(70))
+    summ = s2.summary()
+    check("汇总：平均分与次数",
+          summ["scored_count"] == 2 and summ["avg_overall"] == 80.0
+          and summ["attempts"] == 2)
+
+    # 历史分维度趋势
+    from spoken import history
+    tmp = tempfile.mkdtemp(prefix="spoken_qv_p2_")
+    db = os.path.join(tmp, "h.db")
+    for i, (o, a) in enumerate([(70, 60), (80, 70), (90, 85)]):
+        history.add_session(db, scenario="restaurant_order",
+                            difficulty="intermediate", overall=o, accuracy=a,
+                            integrity=75.0, fluency=80.0,
+                            ts=f"2026-10-1{i}T10:00:00")
+    st = history.stats(db)
+    check("分维度趋势四键齐全",
+          set(st.trends) == {"overall", "accuracy", "integrity", "fluency"})
+    check("趋势按日期升序", [d for d, _ in st.trends["overall"]]
+          == ["2026-10-10", "2026-10-11", "2026-10-12"])
+    check("平均分正确", st.avg_overall == 80.0)
+
+    # 复习排期（SM-2 简化）
+    from spoken import vocab_store
+    from spoken.vocab_model import VocabEntry
+    vdb = os.path.join(tmp, "v.db")
+    vocab_store.save_word(vdb, VocabEntry(word="delicious", phonetic="",
+                                          pos="adj.", definition_zh="美味的"))
+    check("新词立即待复习", len(vocab_store.due_words(vdb)) == 1)
+    vocab_store.update_review(vdb, 1, "know")
+    check("认识后隔 3 天再复习", vocab_store.due_words(vdb) == [])
+    vocab_store.update_review(vdb, 1, "forgot")
+    check("忘记后当天再现", len(vocab_store.due_words(vdb)) == 1)
+    vocab_store.save_word(vdb, VocabEntry(word="Delicious", phonetic="",
+                                          pos="adj.", definition_zh="美味的"))
+    kept = vocab_store.list_words(vdb)[0]
+    check("覆盖保存保留复习字段", kept.reps == 0 and kept.due != "")
+
+    # GUI：跟读页状态机驱动一轮（不录音）
+    try:
+        import tkinter as tk
+        from spoken.gui import SpokenApp
+
+        old_cwd = os.getcwd()
+        os.chdir(tempfile.mkdtemp(prefix="spoken_qv_p2gui_"))
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            app = SpokenApp(root)
+            app._show_page("shadow")
+            app._shadow_begin(sentences[:2])
+            check("跟读页进入 ready", app._shadow_state == "ready")
+            app._shadow_show_result("I would like the menu", _FakeScore(90))
+            check("评分后进入 result", app._shadow_state == "result")
+            app._shadow_next()
+            app._shadow_show_result("", _FakeScore(40))
+            app._shadow_next()
+            app._shadow_show_result("ok", _FakeScore(95))
+            check("低分重练后完成进入 done", app._shadow_state == "done")
+            root.destroy()
+        finally:
+            os.chdir(old_cwd)
+    except Exception as exc:
+        check(f"GUI 跟读流程（异常 {exc}）", False)
+
+
+def test_ci_and_updater() -> None:
+    section("15. CI 配置 / 一键更新 / 精简版打包")
+    import os
+    import tempfile
+    import zipfile
+    from pathlib import Path
+    from spoken import updater
+
+    # -- updater：附件挑选 / 更新脚本 / 解包 --
+    assets = [
+        {"name": "spoken.exe", "browser_download_url": "https://x/spoken.exe"},
+        {"name": "spoken_v1.1.1_win64.zip",
+         "browser_download_url": "https://x/spoken.zip"},
+    ]
+    check("优先挑选 zip 更新包",
+          updater._pick_asset_url(assets) == "https://x/spoken.zip")
+    check("无附件返回空串", updater._pick_asset_url([]) == "")
+    check("只有裸 exe 时也可选",
+          updater._pick_asset_url(assets[:1]) == "https://x/spoken.exe")
+    lite_assets = assets + [
+        {"name": "spoken_v1.1.1_win64_lite.zip",
+         "browser_download_url": "https://x/spoken_lite.zip"}]
+    check("精简版用户优先 lite 包",
+          updater._pick_asset_url(lite_assets, prefer_lite=True)
+          == "https://x/spoken_lite.zip")
+    check("无 lite 包时回退常规包",
+          updater._pick_asset_url(assets, prefer_lite=True)
+          == "https://x/spoken.zip")
+
+    # 解出 exe（构造一个含 spoken.exe 的 zip）
+    tmp = tempfile.mkdtemp(prefix="spoken_qv_p3_")
+    zp = Path(tmp) / "u.zip"
+    with zipfile.ZipFile(zp, "w") as zf:
+        zf.writestr("spoken.exe", "FAKE-EXE")
+    out = updater.extract_exe(zp, Path(tmp))
+    check("从 zip 解出 spoken.exe.new",
+          out.name == "spoken.exe.new" and out.read_text() == "FAKE-EXE")
+
+    # 更新批处理：等待旧进程 → 备份 → 替换 → 重启 → 自删
+    bat = updater.build_update_script(Path(tmp) / "u.bat", out)
+    text = bat.read_text(encoding="gbk")
+    for token in ("tasklist", "PID eq", "spoken.exe.bak", "move /y",
+                  "start", "del /f /q"):
+        check(f"更新批处理包含 {token}", token in text)
+
+    # 非冻结态（源码运行）必须拒绝一键更新
+    try:
+        updater.prepare_update()
+        check("源码态拒绝一键更新", False)
+    except RuntimeError:
+        check("源码态拒绝一键更新", True)
+    except Exception as exc:
+        check(f"源码态拒绝一键更新（异常 {exc}）", False)
+
+    # -- CI / 打包配置文件存在且合法 --
+    root = Path(__file__).resolve().parent
+    ci = root / ".github" / "workflows" / "ci.yml"
+    check("CI 工作流文件存在", ci.is_file())
+    try:
+        import yaml
+        data = yaml.safe_load(ci.read_text(encoding="utf-8"))
+        jobs = set(data.get("jobs", {}))
+        check("CI 含 test/build-lite/build-full 三个 job",
+              {"test", "build-lite", "build-full"} <= jobs)
+        check("完整版仅在 tag 触发",
+              "startsWith(github.ref" in str(data["jobs"]["build-full"]["if"]))
+    except Exception as exc:
+        check(f"CI YAML 解析（异常 {exc}）", False)
+    lite_spec = root / "spoken_lite.spec"
+    check("精简版打包规格存在且排除语音依赖",
+          lite_spec.is_file() and "faster_whisper" in lite_spec.read_text(
+              encoding="utf-8"))
+    bat_txt = (root / "build_exe.bat").read_text(encoding="utf-8")
+    check("build_exe.bat 支持 lite 参数", "lite" in bat_txt)
+
+
 def test_updater() -> None:
     section("12. 自动更新检查：版本解析与比较")
     from spoken import updater
@@ -860,6 +1337,11 @@ def main() -> int:
     test_new_features()
     test_vocab()
     test_custom_scenarios()
+    test_i18n_theme()
+    test_voice_settings_ux()
+    test_icon_bitmaps()
+    test_shadow_and_review()
+    test_ci_and_updater()
     test_updater()
 
     total = PASS + FAIL

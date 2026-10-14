@@ -129,6 +129,8 @@ class MockLLM:
             data = self._opening(scenario, difficulty)
         elif purpose == "summary":
             data = self._summary(scenario, messages)
+        elif purpose == "shadow":
+            data = {"sentences": self._shadow_sentences(scenario, difficulty)}
         else:
             data = self._turn(scenario, difficulty, messages[-1]["content"])
         return json.dumps(data, ensure_ascii=False)
@@ -161,6 +163,42 @@ class MockLLM:
     def _opening(self, scenario: str, difficulty: str) -> dict:
         return self._pack(next_line=self._OPENINGS[self._tpl(scenario)],
                           difficulty=difficulty)
+
+    # 跟读练习句子（按场景确定性生成，供离线测试/体验）
+    _SHADOW_SENTENCES = {
+        "daily_smalltalk": [
+            "How has your week been so far?",
+            "I usually start my day with a cup of coffee.",
+            "What do you like to do on weekends?",
+            "It was really nice running into you today.",
+            "Let's grab lunch together sometime next week.",
+        ],
+        "airport_checkin": [
+            "I would like to check in for my flight, please.",
+            "Could I get an aisle seat if one is available?",
+            "How many bags can I bring on board?",
+            "What time does boarding start for this flight?",
+            "Is there a layover on the way to my destination?",
+        ],
+        "job_interview": [
+            "Could you tell me a bit about the team?",
+            "In my last role, I led a small development team.",
+            "I am eager to take on more responsibility.",
+            "What does success look like in this position?",
+            "I believe my experience fits this role well.",
+        ],
+        "restaurant_order": [
+            "Could I see the menu, please?",
+            "I would like the grilled salmon, without rice.",
+            "Does this dish come with any side vegetables?",
+            "Could we get the bill when you have a moment?",
+            "Everything tasted wonderful, thank you.",
+        ],
+    }
+
+    def _shadow_sentences(self, scenario: str, difficulty: str) -> list[str]:
+        return list(self._SHADOW_SENTENCES.get(
+            scenario, self._SHADOW_SENTENCES["daily_smalltalk"]))
 
     def _turn(self, scenario: str, difficulty: str, user_text: str) -> dict:
         text = " ".join((user_text or "").lower().split())

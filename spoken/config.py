@@ -59,6 +59,12 @@ DEFAULT_CONFIG: dict = {
         "custom_voice": "",
         "custom_language_hint": "",   # 自定义音色的语言，留空默认 en
     },
+    # 界面偏好：语言（zh/en）、主题（light/dark）、窗口几何记忆
+    "ui": {
+        "language": "zh",       # 界面语言：zh（中文）/ en（English）
+        "theme": "light",       # 主题：light（浅色）/ dark（深色）
+        "window_geometry": "",  # 窗口位置与大小，如 960x720+100+50；空=默认
+    },
     # 发音/流利度评分（可选）：阿里云「智能语音交互」语音评测，真正声学打分。
     # 与 qwen-plus / 云端 TTS 是独立服务，需单独开通并获取 AppKey 与 Token。
     "assessment": {
@@ -95,6 +101,9 @@ class Config:
     auto_speak: bool = True
     cloud_tts: dict = None
     assessment: dict = None
+    ui_language: str = "zh"
+    ui_theme: str = "light"
+    window_geometry: str = ""
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -181,4 +190,7 @@ def load_config(explicit_path: str | None = None) -> Config:
         auto_speak=bool(voice.get("auto_speak", True)),
         cloud_tts=dict(data.get("cloud_tts", {})),
         assessment=dict(data.get("assessment", {})),
+        ui_language=str(data.get("ui", {}).get("language", "zh")),
+        ui_theme=str(data.get("ui", {}).get("theme", "light")),
+        window_geometry=str(data.get("ui", {}).get("window_geometry", "")),
     )

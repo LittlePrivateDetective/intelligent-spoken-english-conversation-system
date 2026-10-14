@@ -62,6 +62,11 @@ class VocabEntry:
     contrast: list[ContrastGroup] = field(default_factory=list)
     phrases: list[Phrase] = field(default_factory=list)
     created_at: str = ""
+    # 复习排期（遗忘曲线，SM-2 简化）：due=下次复习日期(ISO)，
+    # interval=当前间隔天数，reps=已连续答对次数。空 due 表示从未复习。
+    due: str = ""
+    interval: int = 0
+    reps: int = 0
     id: int = 0    # 本地数据库主键（未入库时为 0）
 
     # ------------------------------------------------------------------
@@ -140,5 +145,8 @@ class VocabEntry:
             contrast=contrast,
             phrases=phrases,
             created_at=created,
+            due=str(raw.get("due") or ""),
+            interval=int(raw.get("interval", 0) or 0),
+            reps=int(raw.get("reps", 0) or 0),
             id=int(raw.get("id", 0) or 0),
         )

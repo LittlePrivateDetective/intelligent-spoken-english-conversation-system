@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # 测试：每次 push / PR 自动跑两套离线验证（MockLLM，无需 API Key）
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 安装核心依赖
+        run: pip install -e .
+      - name: quick_validate（196+ 项离线检查）
+        run: python quick_validate.py
+      - name: verify（771 项回归）
+        run: python verify.py
+
+  # 纯文字精简版：每次构建，产物作为 Artifact 供下载
+  build-lite:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 安装 PyInstaller
+        run: pip install pyinstaller
+      - name: 打包精简版
+        run: pyinstaller --noconfirm --clean spoken_lite.spec
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spoken-lite
+          path: dist/spoken.exe
+          if-no-files-found: error
+
+  # 完整版：仅打 tag（v*）时构建，zip 挂到对应 GitHub Release
+  build-full:
+    if: startsWith(github.ref, "refs/tags/v")
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 安装语音依赖与 PyInstaller
+        run: pip install -e ".[voice]" pyinstaller
+      - name: 打包完整版
+        run: pyinstaller --noconfirm --clean spoken.spec
+      - name: 打包精简版（lite）
+        run: pyinstaller --noconfirm --clean spoken_lite.spec
+      - name: 重命名并压缩（完整版 + 精简版）
+        shell: pwsh
+        run: |
+          Rename-Item -Path dist/spoken.exe -NewName "spoken_full.exe"
+          pyinstaller --noconfirm --clean spoken_lite.spec
+          Rename-Item -Path dist/spoken.exe -NewName "spoken_lite.exe"
+          Compress-Archive -Path dist/spoken_full.exe -DestinationPath "dist/spoken_${{ github.ref_name }}_win64.zip" -Force
+          Compress-Archive -Path dist/spoken_lite.exe -DestinationPath "dist/spoken_${{ github.ref_name }}_win64_lite.zip" -Force
+      - name: 上传到 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/spoken_*_win64*.zip
+          generate_release_notes: false

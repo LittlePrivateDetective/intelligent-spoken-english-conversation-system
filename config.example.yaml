@@ -67,3 +67,9 @@ assessment:
   token: ""              # 访问 Token（也可后续改为用 AK/SK 自动获取）
   region: "cn-shanghai"  # 服务地域
   model_id: "en.pred.score"
+
+# 界面偏好：均可在设置页右上角直接切换，此处为默认值
+ui:
+  language: zh           # 界面语言：zh（中文）/ en（English）
+  theme: light           # 主题：light（浅色）/ dark（深色）
+  window_geometry: ""    # 窗口位置与大小记忆，如 "960x720+100+50"；留空=默认居中

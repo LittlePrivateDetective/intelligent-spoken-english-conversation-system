@@ -27,7 +27,7 @@ from .asr import (
 )
 from .assessor import Assessor, MockAssessor, float32_to_wav_bytes
 from .config import find_config_file, load_config
-from .paths import data_file
+from .paths import data_file, is_frozen
 from .dialogue import DialogueEngine
 from .history import add_session, list_sessions, stats as history_stats
 from .llm import LLMError, OpenAICompatibleLLM
@@ -36,11 +36,14 @@ from .scenarios import (
     DIFFICULTIES, DIFFICULTY_ORDER, is_custom, list_scenario_keys,
     resolve_hotwords, resolve_scenario,
 )
+from .shadow import ShadowSession, generate_sentences
 from .tts import Speaker, list_voices as tts_list_voices, tts_available
 from .vocab_gen import VocabGenerator
 from .vocab_model import VocabEntry
-from .vocab_store import delete_word, list_words, save_word
+from .vocab_store import delete_word, due_words, list_words, save_word, update_review
 from . import __version__, accents, cloud_tts, custom_scenarios, updater
+from . import i18n, icons, theme as _theme_module
+from .i18n import t
 
 _FONT = ("Microsoft YaHei UI", 10)
 _FONT_SMALL = ("Microsoft YaHei UI", 9)
@@ -50,29 +53,24 @@ _FONT_TITLE = ("Microsoft YaHei UI", 26, "bold")
 _FONT_H2 = ("Microsoft YaHei UI", 13, "bold")
 
 # ------------------------------------------------------------------
-# 浅色调色板
+# 主题色板：浅色 / 深色两套，由 spoken.theme 提供。
+# 模块级常量在 _apply_theme_colors() 时整体替换，随后重建界面即换肤。
 # ------------------------------------------------------------------
-C_BG = "#F4F6FA"        # 米白浅灰背景
-C_CARD = "#FFFFFF"      # 卡片
-C_BORDER = "#E4E9F2"    # 边框
-C_SHADOW = "#E8EDF4"    # 卡片投影（偏移矩形模拟）
-C_TEXT = "#2E3A4D"      # 主文字（深灰蓝，非纯黑）
-C_TEXT2 = "#7C8AA0"     # 次文字
-C_TEXT3 = "#AAB6C6"     # 弱文字/禁用
-C_ACCENT = "#4C7DFF"    # 主色（淡蓝）
-C_ACCENT_D = "#3A6BE0"  # 主色加深（按压）
-C_ACCENT_BG = "#ECF2FF"  # 选中卡片底
-C_BUBBLE_AI = "#ECF2FF"  # AI 气泡（浅蓝）
-C_BUBBLE_USER = "#E9F7F0"  # 用户气泡（浅绿）
-C_GREEN = "#3FAE85"     # 辅助色（淡绿）
-C_REC = "#FF7A6B"       # 录音珊瑚色
-C_REC_D = "#F2604F"
-C_REC_BG = "#FFEEEB"
-C_TAG_AI = "#2B5FD9"
-C_TAG_USER = "#2F7D4F"
-C_TAG_FEEDBACK = "#B7791F"
-C_TAG_HINT = "#C05621"
-C_TAG_SYS = "#8A94A6"
+
+
+def _apply_theme_colors(name: str) -> None:
+    """把选定主题的调色板写入模块级颜色常量。"""
+    pal = _theme_module.palette(name)
+    g = globals()
+    for key, value in pal.items():
+        g["C_" + key.upper()] = value
+
+
+_apply_theme_colors(_theme_module.DEFAULT_THEME)
+
+# 界面偏好下拉框的显示名（与存储值 zh/en、light/dark 互相映射）
+_LANG_LABELS = {"zh": "中文", "en": "English"}
+_THEME_LABELS = {"light": "浅色", "dark": "深色"}
 
 
 # 场景图标（仅展示用，与后端场景数据解耦）
@@ -82,14 +80,38 @@ _SCENARIO_ICONS = {
     "job_interview": "💼",
     "restaurant_order": "🍽️",
     "business_meeting": "📊",
-    "travel": "🧳",
-    "hotel": "🏨",
+    "travel": "🗺",
+    "hotel": "🛏",
     "shopping": "🛍️",
     "hospital": "🏥",
     "phone_call": "📞",
     "opinion": "💡",
     "campus": "🎓",
 }
+
+
+def _mono_icon(ch: str) -> str:
+    """把 emoji 转为文本呈现（追加 U+FE0E、去掉 U+FE0F）。
+
+    Windows 的「Segoe UI Emoji」默认按彩色字图渲染，fill 不生效；
+    转为文本呈现后按 fill 单色渲染，深色主题下图标随文字一起变白。
+    （仅在 Pillow 位图不可用时作为回退路径使用。）
+    """
+    return ch.replace("\ufe0f", "") + "\ufe0e"
+
+
+def _draw_icon(canvas, x, y, ch: str, size: int, color: str) -> None:
+    """在 canvas (x, y) 画一个居中单色图标。
+
+    优先用 icons.icon() 渲染位图（位置/颜色完全可控，规避 Tk 对
+    emoji 的字体回退布局偏差）；位图不可用时回退 create_text。
+    """
+    img = icons.icon(ch, size, color, master=canvas)
+    if img is not None:
+        canvas.create_image(x, y, image=img)
+        return
+    canvas.create_text(x, y, text=_mono_icon(ch),
+                       font=("Segoe UI Symbol", size), fill=color)
 
 
 def _toast(parent, msg: str) -> None:
@@ -141,13 +163,6 @@ def rounded_rect(cv: tk.Canvas, x1: float, y1: float, x2: float, y2: float,
 class PillButton(tk.Canvas):
     """圆角按钮：primary / secondary / rec / ghost 四种风格，带悬停按压态。"""
 
-    _STYLES = {
-        "primary": (C_ACCENT, C_ACCENT_D, "#FFFFFF"),
-        "rec": (C_REC, C_REC_D, "#FFFFFF"),
-        "secondary": (C_CARD, "#EEF2F8", C_TEXT),
-        "ghost": (C_BG, "#EAEEF5", C_TEXT2),
-    }
-
     def __init__(self, master, text: str, command=None, kind: str = "primary",
                  width: int = 120, height: int = 34, font=_FONT,
                  bg: str = C_BG) -> None:
@@ -181,6 +196,16 @@ class PillButton(tk.Canvas):
         self._draw()
 
     # -- 内部 ------------------------------------------------------
+    @staticmethod
+    def _styles() -> dict:
+        """按当前主题取四种风格的 (底色, 按压色, 文字色)。"""
+        return {
+            "primary": (C_ACCENT, C_ACCENT_D, "#FFFFFF"),
+            "rec": (C_REC, C_REC_D, "#FFFFFF"),
+            "secondary": (C_CARD, C_BTN_SECONDARY, C_TEXT),
+            "ghost": (C_BG, C_BTN_GHOST_HOVER, C_TEXT2),
+        }
+
     def _on_enter(self, _e):
         self._hover = True
         self._draw()
@@ -205,20 +230,20 @@ class PillButton(tk.Canvas):
         self.delete("all")
         if not self._enabled:
             rounded_rect(self, 1, 1, self._bw - 1, self._bh - 1, self._bh / 2,
-                         fill="#EDF0F5")
+                         fill=C_BTN_DISABLED)
             self.create_text(self._bw / 2, self._bh / 2, text=self.text,
                              font=self.font, fill=C_TEXT3)
             return
-        base, pressed, fg = self._STYLES[self.kind]
+        base, pressed, fg = self._styles()[self.kind]
         fill = pressed if self._pressed else base
         if self.kind == "secondary" and self._hover:
-            fill = "#E6ECF6"
+            fill = C_BTN_SECONDARY_HOVER
         elif self.kind == "primary" and self._hover:
-            fill = "#5C89FF"
+            fill = C_ACCENT_HOVER
         elif self.kind == "rec" and self._hover:
-            fill = "#FF8F81"
+            fill = C_REC_HOVER
         elif self.kind == "ghost" and self._hover:
-            fill = "#E2E8F2"
+            fill = C_BTN_GHOST_HOVER
         # 轻微投影
         _rr_fill(self, 0, 2, self._bw, self._bh, self._bh / 2,
                  fill=C_SHADOW, outline="")
@@ -277,11 +302,10 @@ class ScenarioCard(tk.Canvas):
         if self.add_card:
             rounded_rect(self, 0, 0, self._bw, self._bh - 2, 14,
                          fill=C_ACCENT_BG, outline=C_ACCENT, width=1.5)
-            self.create_text(34, self._bh / 2 - 2, text="➕",
-                             font=("Segoe UI Emoji", 24))
-            self.create_text(70, 30, text="自定义场景", anchor="w",
+            _draw_icon(self, 34, self._bh / 2 - 2, "➕", 24, C_TEXT)
+            self.create_text(70, 30, text=t("自定义场景"), anchor="w",
                              font=_FONT_H2, fill=C_ACCENT)
-            self.create_text(70, 52, text="点击新建你的专属场景", anchor="w",
+            self.create_text(70, 52, text=t("点击新建你的专属场景"), anchor="w",
                              font=_FONT_SMALL, fill=C_TEXT2)
             return
         info = resolve_scenario(self.key)
@@ -292,14 +316,18 @@ class ScenarioCard(tk.Canvas):
             rounded_rect(self, 0, 0, self._bw, self._bh - 2, 14,
                          fill=C_CARD, outline=C_BORDER, width=1)
         icon = "✎" if is_custom(self.key) else _SCENARIO_ICONS.get(self.key, "🗣")
-        self.create_text(34, self._bh / 2 - 2, text=icon,
-                         font=("Segoe UI Emoji", 24))
-        self.create_text(70, 26, text=info["name"], anchor="w",
+        _draw_icon(self, 34, self._bh / 2 - 2, icon, 24, C_TEXT)
+        # 英文界面时以英文名为主、中文名为辅（数据本身双语，无需翻译表）
+        if i18n.get_language() == "en":
+            primary, secondary = info["name_en"], info["name"]
+        else:
+            primary, secondary = info["name"], info["name_en"]
+        self.create_text(70, 26, text=primary, anchor="w",
                          font=_FONT_H2, fill=C_TEXT)
-        self.create_text(70, 50, text=info["name_en"], anchor="w",
+        self.create_text(70, 50, text=secondary, anchor="w",
                          font=_FONT_SMALL, fill=C_TEXT2)
         if is_custom(self.key):
-            self.create_text(70, 66, text="自定义场景", anchor="w",
+            self.create_text(70, 66, text=t("自定义场景"), anchor="w",
                              font=_FONT_SMALL, fill=C_TEXT3)
 
 
@@ -337,7 +365,7 @@ class DifficultyPill(tk.Canvas):
         if self.selected:
             rounded_rect(self, 0, 0, self._bw, self._bh - 2, self._bh / 2,
                          fill=C_ACCENT)
-            name_fg, cefr_fg = "#FFFFFF", "#D8E4FF"
+            name_fg, cefr_fg = "#FFFFFF", C_PILL_SELECTED_CEFR
         else:
             rounded_rect(self, 0, 0, self._bw, self._bh - 2, self._bh / 2,
                          fill=C_CARD, outline=C_BORDER, width=1)
@@ -410,24 +438,23 @@ class RecordingOrb(tk.Canvas):
         for i in range(3):
             p = (self._phase * 0.9 + i / 3.0) % 1.0
             ring_r = 52 + p * (46 + lv * 60)
-            tint = ("#D9E5FF", "#C6D8FF", "#B3CBFF")[i]
+            tint = (C_ORB_RING_1, C_ORB_RING_2, C_ORB_RING_3)[i]
             self.create_oval(cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r,
                              outline=tint, width=2)
         # ---- 球体（同心圆模拟径向渐变） --------------------------
         r = 44 + lv * 26
         self.create_oval(cx - r, cy - r, cx + r, cy + r,
-                         fill="#B9CFFF", outline="")
+                         fill=C_ORB_BODY, outline="")
         self.create_oval(cx - r * 0.74, cy - r * 0.74,
                          cx + r * 0.74, cy + r * 0.74,
-                         fill="#7FA5FF", outline="")
+                         fill=C_ORB_BODY_HI, outline="")
         self.create_oval(cx - r * 0.48, cy - r * 0.48,
                          cx + r * 0.48, cy + r * 0.48,
                          fill=C_ACCENT, outline="")
         # 中心图标
-        self.create_text(cx, cy, text="🎙", font=("Segoe UI Emoji", 20),
-                         fill="#FFFFFF")
+        _draw_icon(self, cx, cy, "🎙", 20, "#FFFFFF")
         # ---- 状态文字 --------------------------------------------
-        self.create_text(cx, cy + r + 26, text="正在聆听 …",
+        self.create_text(cx, cy + r + 26, text=t("正在聆听 …"),
                          font=_FONT_H2, fill=C_REC)
         self.create_text(cx, cy + r + 50, text=self._timer_text,
                          font=_FONT_SMALL, fill=C_TEXT2)
@@ -441,12 +468,16 @@ class SpokenApp:
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("spoken — 智能英语口语教练")
-        self.root.geometry("960x720")
+        self.cfg = load_config()
+        # 界面偏好：主题色板先就位（后续控件创建才能取到正确颜色），
+        # 语言其次；窗口几何最后恢复
+        _apply_theme_colors(self.cfg.ui_theme)
+        i18n.set_language(self.cfg.ui_language)
+        self.root.title(t("spoken — 智能英语口语教练"))
+        self.root.geometry(self.cfg.window_geometry or "960x720")
         self.root.minsize(860, 600)
         self.root.configure(bg=C_BG)
 
-        self.cfg = load_config()
         self.engine: DialogueEngine | None = None
         self.session_active = False
         self.busy = False            # 后台任务进行中（识别/LLM/总结）
@@ -526,14 +557,90 @@ class SpokenApp:
     # ------------------------------------------------------------------
     def _build_ui(self) -> None:
         self._pages: dict[str, tk.Frame] = {}
+        self._style_ttk()
+        self._bind_shortcuts()
         self._build_welcome_page()
         self._build_setup_page()
         self._build_chat_page()
+        self._build_shadow_page()
         self._show_page("welcome")
+        self._refresh_vocab_badges()
 
         # 启动 1 秒后做一次语音自检，让"没声音"问题当场可见
         if self.speaker.available:
             self.root.after(1000, self._voice_selfcheck)
+
+    def _style_ttk(self) -> None:
+        """让 ttk 控件（Combobox/Scrollbar）跟随当前主题色板。"""
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure("TCombobox", fieldbackground=C_CARD,
+                        background=C_CARD, foreground=C_TEXT,
+                        arrowcolor=C_TEXT2, bordercolor=C_BORDER)
+        style.configure("Vertical.TScrollbar", background=C_BTN_SECONDARY,
+                        troughcolor=C_BG, bordercolor=C_BG,
+                        arrowcolor=C_TEXT2)
+        style.map("TCombobox", fieldbackground=[("readonly", C_CARD)])
+
+    def _bind_shortcuts(self) -> None:
+        """全局快捷键：空格=录音开/关（对话页），Esc=取消录音。"""
+        self.root.bind_all("<space>", self._on_space)
+        self.root.bind_all("<Escape>", self._on_escape)
+
+    def _on_space(self, _e=None) -> str:
+        # 输入框聚焦时交给控件自行处理（输入空格）
+        focused = self.root.focus_get()
+        if isinstance(focused, (tk.Entry, ttk.Entry)):
+            return ""
+        page = getattr(self, "_page", None)
+        if page == "chat":
+            self._toggle_mic()
+        elif page == "shadow":
+            if self._shadow_state == "ready":
+                self._shadow_record()
+            elif self._shadow_state == "recording":
+                self._shadow_stop_and_score()
+        return "break"
+
+    def _on_escape(self, _e=None) -> str:
+        if self.recording:
+            self._cancel_recording()
+        return "break"
+
+    def _cancel_recording(self) -> None:
+        """Esc：放弃当前录音（不识别、不发送）。"""
+        try:
+            if self.recorder is not None:
+                self.recorder.cancel()
+        except Exception:
+            pass
+        self.recording = False
+        self._rec_mode = "chat"
+        self.busy = False
+        self._orb_stop(getattr(self, "_active_orb", None))
+        if getattr(self, "_page", None) == "shadow":
+            self._shadow_set_state("ready")
+            self._shadow_status(t("就绪 — 点击播放熟悉句子，然后录音跟读（空格键也可以）"))
+            return
+        self.mic_btn.set_text(t("🎤 点击说话"))
+        self.mic_btn.set_kind("primary")
+        self.mic_btn.set_enabled(True)
+        self._set_status(t("就绪 — 点击麦克风说话，或输入文字"))
+
+    def _rebuild_ui(self) -> None:
+        """语言 / 主题切换后整体重建界面（保留当前所在页）。
+
+        会话进行中不提供切换入口（设置在欢迎/设置页），因此重建不会
+        打断对话；二级窗口由各 _open_* 自行关闭后重开。
+        """
+        page = getattr(self, "_page", "welcome")
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        self._build_ui()
+        self._show_page(page)
 
     def _show_page(self, name: str) -> None:
         for page in self._pages.values():
@@ -549,9 +656,9 @@ class SpokenApp:
         # 装饰性柔和色块（浅蓝 / 浅绿，部分出血到屏幕外）
         deco = tk.Canvas(page, bg=C_BG, highlightthickness=0, bd=0)
         deco.place(relx=0, rely=0, relwidth=1, relheight=1)
-        deco.create_oval(-160, -180, 260, 240, fill="#E9F0FE", outline="")
-        deco.create_oval(760, 480, 1180, 900, fill="#E6F6F0", outline="")
-        deco.create_oval(880, -120, 1080, 80, fill="#EAF1FE", outline="")
+        deco.create_oval(-160, -180, 260, 240, fill=C_DECO_1, outline="")
+        deco.create_oval(760, 480, 1180, 900, fill=C_DECO_2, outline="")
+        deco.create_oval(880, -120, 1080, 80, fill=C_DECO_3, outline="")
 
         card = tk.Canvas(page, width=460, height=380, bg=C_BG,
                          highlightthickness=0, bd=0)
@@ -562,20 +669,20 @@ class SpokenApp:
 
         # 顶部圆形图标
         card.create_oval(190, 52, 270, 132, fill=C_ACCENT_BG, outline="")
-        card.create_text(230, 92, text="🎓", font=("Segoe UI Emoji", 30))
-        card.create_text(230, 176, text="口语练习助手",
+        _draw_icon(card, 230, 92, "🎓", 30, C_TEXT)
+        card.create_text(230, 176, text=t("口语练习助手"),
                          font=_FONT_TITLE, fill=C_TEXT)
-        card.create_text(230, 216, text="AI 陪你每天练英语口语 · 实时纠错 · 语音陪练",
+        card.create_text(230, 216, text=t("AI 陪你每天练英语口语 · 实时纠错 · 语音陪练"),
                          font=_FONT_SMALL, fill=C_TEXT2)
-        card.create_text(230, 246, text="本地模型驱动，离线也能练",
+        card.create_text(230, 246, text=t("本地模型驱动，离线也能练"),
                          font=_FONT_SMALL, fill=C_TEXT2)
 
         self._welcome_btn = PillButton(
-            card, text="开始练习", command=lambda: self._show_page("setup"),
+            card, text=t("开始练习"), command=lambda: self._show_page("setup"),
             kind="primary", width=200, height=44,
             font=("Microsoft YaHei UI", 11, "bold"))
         card.create_window(230, 306, window=self._welcome_btn)
-        card.create_text(230, 344, text="spoken v1.0.0",
+        card.create_text(230, 344, text=f"spoken v{__version__}",
                          font=_FONT_SMALL, fill=C_TEXT3)
 
     # -- 设置页 -------------------------------------------------------
@@ -586,40 +693,48 @@ class SpokenApp:
         # 顶部标题
         header = tk.Frame(page, bg=C_BG)
         header.pack(fill=tk.X, padx=48, pady=(36, 12))
-        tk.Label(header, text="练习设置", font=_FONT_TITLE, bg=C_BG,
+        tk.Label(header, text=t("练习设置"), font=_FONT_TITLE, bg=C_BG,
                  fg=C_TEXT).pack(anchor="w")
-        tk.Label(header, text="选一个场景和难度，随时可以重新开始",
+        tk.Label(header, text=t("选一个场景和难度，随时可以重新开始"),
                  font=_FONT_SMALL, bg=C_BG, fg=C_TEXT2).pack(anchor="w", pady=(4, 0))
         # 右上角工具按钮：生词本 / 练习历史 / 语音设置
         toolbar = tk.Frame(header, bg=C_BG)
         toolbar.pack(side=tk.RIGHT, anchor="e")
         self._vocab_btn = PillButton(
-            toolbar, text="📚 生词本", command=self._open_vocab,
+            toolbar, text=t("📚 生词本"), command=self._open_vocab,
             kind="ghost", width=104, height=30, bg=C_BG)
         self._vocab_btn.pack(side=tk.RIGHT, padx=(0, 8))
         self._history_btn = PillButton(
-            toolbar, text="📊 练习历史", command=self._open_history,
+            toolbar, text=t("📊 练习历史"), command=self._open_history,
             kind="ghost", width=116, height=30, bg=C_BG)
         self._history_btn.pack(side=tk.RIGHT, padx=(0, 8))
         self._settings_btn = PillButton(
-            toolbar, text="⚙ 语音设置", command=self._open_voice_settings,
+            toolbar, text=t("⚙ 语音设置"), command=self._open_voice_settings,
             kind="ghost", width=116, height=30, bg=C_BG)
         self._settings_btn.pack(side=tk.RIGHT)
-        PillButton(toolbar, text="🔑 API 配置", command=self._open_api_setup,
+        PillButton(toolbar, text=t("🔑 API 配置"), command=self._open_api_setup,
                    kind="ghost", width=104, height=30, bg=C_BG).pack(
                        side=tk.RIGHT, padx=(0, 8))
+
+        # 界面偏好行：语言 / 主题（保存 config 后整体重建，立即生效）
+        self._build_pref_row(header)
 
         # 底部操作行（最先 pack：固定在窗口最底部，内容再多也不会被淹没）
         bottom = tk.Frame(page, bg=C_BG)
         bottom.pack(side=tk.BOTTOM, fill=tk.X, padx=48, pady=24)
-        back = PillButton(bottom, text="← 返回", command=self._back_to_welcome,
+        back = PillButton(bottom, text=t("← 返回"), command=self._back_to_welcome,
                           kind="ghost", width=96, height=38)
         back.pack(side=tk.LEFT)
         self._start_btn = PillButton(
-            bottom, text="开始对话", command=self._start_session,
+            bottom, text=t("开始对话"), command=self._start_session,
             kind="primary", width=160, height=38,
             font=("Microsoft YaHei UI", 11, "bold"))
-        self._start_btn.pack(side=tk.RIGHT)
+        self._start_btn.pack(side=tk.RIGHT, padx=(0, 10))
+        self._shadow_entry_btn = PillButton(
+            bottom, text=t("🎯 跟读练习"), command=lambda: self._show_page("shadow"),
+            kind="secondary", width=140, height=38,
+            font=("Microsoft YaHei UI", 11, "bold"))
+        self._shadow_entry_btn.pack(side=tk.RIGHT)
 
         # 状态行（底部操作栏上方，固定）
         self._setup_status_var = tk.StringVar(value=self._initial_status())
@@ -630,7 +745,7 @@ class SpokenApp:
         # 难度选择区（固定可见：滚动区与状态行之间，不用滚动就能选）
         diff_row = tk.Frame(page, bg=C_BG)
         diff_row.pack(side=tk.BOTTOM, fill=tk.X, padx=48, pady=(2, 6))
-        tk.Label(diff_row, text="选择难度", font=_FONT_H2, bg=C_BG,
+        tk.Label(diff_row, text=t("选择难度"), font=_FONT_H2, bg=C_BG,
                  fg=C_TEXT).pack(side=tk.LEFT, padx=(0, 16))
         pill_row = tk.Frame(diff_row, bg=C_BG)
         pill_row.pack(side=tk.LEFT)
@@ -662,7 +777,7 @@ class SpokenApp:
             lambda e: canvas.itemconfigure(_win, width=e.width))
 
         # 场景卡片区（唯一需要滚动的部分）
-        tk.Label(inner, text="选择场景", font=_FONT_H2, bg=C_BG,
+        tk.Label(inner, text=t("选择场景"), font=_FONT_H2, bg=C_BG,
                  fg=C_TEXT).pack(anchor="w", padx=48, pady=(10, 8))
         grid = tk.Frame(inner, bg=C_BG)
         grid.pack(anchor="w", padx=48)
@@ -676,6 +791,62 @@ class SpokenApp:
         # 鼠标滚轮滚动（递归绑定；卡片重建后 _build_scenario_cards 会再绑一次）
         canvas.bind("<MouseWheel>", self._on_setup_wheel)
         self._wheel_bind(inner)
+
+    # -- 界面偏好（语言 / 主题） ---------------------------------------
+    def _build_pref_row(self, parent: tk.Frame) -> None:
+        """设置页头部：语言与主题下拉框，切换即存 config 并重建界面。"""
+        row = tk.Frame(parent, bg=C_BG)
+        row.pack(side=tk.RIGHT, anchor="e", pady=(2, 0))
+
+        tk.Label(row, text=t("语言"), font=_FONT_SMALL, bg=C_BG,
+                 fg=C_TEXT2).pack(side=tk.LEFT)
+        lang_var = tk.StringVar(value=_LANG_LABELS[i18n.get_language()])
+        lang_box = ttk.Combobox(
+            row, textvariable=lang_var, width=8, state="readonly",
+            values=list(_LANG_LABELS.values()))
+        lang_box.pack(side=tk.LEFT, padx=(4, 14))
+
+        tk.Label(row, text=t("主题"), font=_FONT_SMALL, bg=C_BG,
+                 fg=C_TEXT2).pack(side=tk.LEFT)
+        theme_var = tk.StringVar(
+            value=_THEME_LABELS.get(self.cfg.ui_theme, _THEME_LABELS["light"]))
+        theme_box = ttk.Combobox(
+            row, textvariable=theme_var, width=8, state="readonly",
+            values=[_THEME_LABELS[k] for k in _theme_module.available_themes()])
+        theme_box.pack(side=tk.LEFT, padx=(4, 0))
+
+        def _on_lang(_e=None) -> None:
+            label = lang_var.get()
+            new = next((k for k, v in _LANG_LABELS.items() if v == label),
+                       i18n.get_language())
+            self._apply_ui_preference("language", new)
+
+        def _on_theme(_e=None) -> None:
+            label = theme_var.get()
+            new = next((k for k, v in _THEME_LABELS.items() if v == label),
+                       self.cfg.ui_theme)
+            self._apply_ui_preference("theme", new)
+
+        lang_box.bind("<<ComboboxSelected>>", _on_lang)
+        theme_box.bind("<<ComboboxSelected>>", _on_theme)
+
+    def _apply_ui_preference(self, key: str, value: str) -> None:
+        """应用并持久化一项界面偏好（language / theme），然后重建界面。"""
+        if key == "language":
+            if value == i18n.get_language():
+                return
+            self._save_config_patch({"ui": {"language": value}})
+            self.cfg = load_config()
+            i18n.set_language(value)
+        elif key == "theme":
+            if value == self.cfg.ui_theme:
+                return
+            self._save_config_patch({"ui": {"theme": value}})
+            self.cfg = load_config()
+            _apply_theme_colors(value)
+        else:
+            return
+        self._rebuild_ui()
 
     # -- 场景卡片构建 / 自定义场景管理 --------------------------------
     def _build_scenario_cards(self) -> None:
@@ -736,8 +907,8 @@ class SpokenApp:
         if not is_custom(key):
             return
         menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label="编辑场景", command=lambda: self._open_custom_editor(key))
-        menu.add_command(label="删除场景",
+        menu.add_command(label=t("编辑场景"), command=lambda: self._open_custom_editor(key))
+        menu.add_command(label=t("删除场景"),
                         command=lambda: self._delete_custom_scenario(key))
         try:
             menu.tk_popup(self.root.winfo_pointerx(), self.root.winfo_pointery())
@@ -749,7 +920,7 @@ class SpokenApp:
         editing = bool(key)
         scn = custom_scenarios.load().get(key, {}) if editing else {}
         dialog = tk.Toplevel(self.root)
-        dialog.title("编辑自定义场景" if editing else "新建自定义场景")
+        dialog.title(t("编辑自定义场景") if editing else t("新建自定义场景"))
         dialog.geometry("520x560")
         dialog.transient(self.root)
         dialog.configure(bg=C_BG)
@@ -757,14 +928,14 @@ class SpokenApp:
 
         fields: dict[str, tk.Entry] = {}
         rows = [
-            ("场景中文名 *", "name", "如：商务谈判"),
-            ("英文名 *", "name_en", "如：Business Negotiation"),
-            ("一句话简介 *", "summary", "卡片上显示的副标题"),
-            ("AI 扮演角色 *", "ai_role", "如：合作方业务经理"),
-            ("你的角色 *", "user_role", "如：我方项目负责人"),
-            ("场景设定 *", "setting", "开头情境描述"),
-            ("练习目标 *", "goals", "希望达成的对话目标"),
-            ("识别热词（可选）", "hotwords", "专有名词，空格分隔，提升识别率"),
+            (t("场景中文名 *"), "name", t("如：商务谈判")),
+            (t("英文名 *"), "name_en", t("如：Business Negotiation")),
+            (t("一句话简介 *"), "summary", t("卡片上显示的副标题")),
+            (t("AI 扮演角色 *"), "ai_role", t("如：合作方业务经理")),
+            (t("你的角色 *"), "user_role", t("如：我方项目负责人")),
+            (t("场景设定 *"), "setting", t("开头情境描述")),
+            (t("练习目标 *"), "goals", t("希望达成的对话目标")),
+            (t("识别热词（可选）"), "hotwords", t("专有名词，空格分隔，提升识别率")),
         ]
         y = 14
         for label, field, placeholder in rows:
@@ -779,7 +950,7 @@ class SpokenApp:
         def _save() -> None:
             data = {f: fields[f].get().strip() for f, _, _ in rows}
             if not data["name"] or not data["name_en"]:
-                _toast(dialog, "场景中文名与英文名不能为空")
+                _toast(dialog, t("场景中文名与英文名不能为空"))
                 return
             if editing:
                 data["key"] = key
@@ -793,9 +964,9 @@ class SpokenApp:
                 if new_key in self._scenario_keys:
                     self._select_scenario(self._scenario_keys.index(new_key))
 
-        PillButton(dialog, text="保存", command=_save, kind="primary",
+        PillButton(dialog, text=t("保存"), command=_save, kind="primary",
                    width=120, height=36).place(x=20, y=y + 6)
-        PillButton(dialog, text="取消", command=dialog.destroy, kind="ghost",
+        PillButton(dialog, text=t("取消"), command=dialog.destroy, kind="ghost",
                    width=120, height=36).place(x=160, y=y + 6)
 
     def _delete_custom_scenario(self, key: str) -> None:
@@ -815,10 +986,10 @@ class SpokenApp:
         tk.Label(header, textvariable=self._session_var, font=_FONT_H2,
                  bg=C_BG, fg=C_TEXT).pack(side=tk.LEFT)
         self._chat_vocab_btn = PillButton(
-            header, text="📚 生词本", command=self._open_vocab,
+            header, text=t("📚 生词本"), command=self._open_vocab,
             kind="ghost", width=110, height=32, bg=C_BG)
         self._chat_vocab_btn.pack(side=tk.RIGHT, padx=(0, 8))
-        self._end_btn = PillButton(header, text="结束对话",
+        self._end_btn = PillButton(header, text=t("结束对话"),
                                    command=self._end_session, kind="rec",
                                    width=110, height=32, bg=C_BG)
         self._end_btn.pack(side=tk.RIGHT)
@@ -857,6 +1028,8 @@ class SpokenApp:
                              font=_FONT_SMALL, spacing1=2, spacing3=3)
         self.chat.tag_config("system", foreground=C_TAG_SYS,
                              font=_FONT_SMALL, spacing1=2, spacing3=3)
+        # 选中对话文字 → 右键一键查询收藏（对话中积累生词的主要入口）
+        self.chat.bind("<Button-3>", self._on_chat_right_click)
 
         # 参考句 / 关键词提示（跟读辅助，始终可见）
         self._ref_frame = tk.Frame(page, bg=C_BG)
@@ -873,7 +1046,7 @@ class SpokenApp:
         # 底部输入行
         bottom = tk.Frame(page, bg=C_BG)
         bottom.pack(fill=tk.X, padx=20, pady=(0, 10))
-        self.mic_btn = PillButton(bottom, text="🎤 点击说话",
+        self.mic_btn = PillButton(bottom, text=t("🎤 点击说话"),
                                   command=self._toggle_mic, kind="primary",
                                   width=128, height=34, bg=C_BG)
         self.mic_btn.pack(side=tk.LEFT, padx=(0, 10))
@@ -890,19 +1063,19 @@ class SpokenApp:
         self._entry_bg.bind("<Configure>", self._redraw_entry_bg)
         self._redraw_entry_bg()
 
-        self.send_btn = PillButton(bottom, text="发送",
+        self.send_btn = PillButton(bottom, text=t("发送"),
                                    command=self._send_from_box,
                                    kind="secondary", width=72, height=34,
                                    bg=C_BG)
         self.send_btn.pack(side=tk.LEFT, padx=(0, 8))
 
-        self.shadow_btn = PillButton(bottom, text="🎯 跟读打分",
+        self.shadow_btn = PillButton(bottom, text=t("🎯 跟读打分"),
                                      command=self._start_shadow,
                                      kind="ghost", width=120, height=34,
                                      bg=C_BG)
         self.shadow_btn.pack(side=tk.LEFT, padx=(0, 8))
 
-        self.replay_btn = PillButton(bottom, text="🔊 重播",
+        self.replay_btn = PillButton(bottom, text=t("🔊 重播"),
                                      command=self._replay_last,
                                      kind="ghost", width=96, height=34,
                                      bg=C_BG)
@@ -913,6 +1086,366 @@ class SpokenApp:
         tk.Label(page, textvariable=self.status_var, font=_FONT_SMALL,
                  bg=C_BG, fg=C_TEXT2, anchor="w").pack(
                      side=tk.BOTTOM, fill=tk.X, padx=20, pady=(0, 10))
+
+    # -- 跟读练习页 ---------------------------------------------------
+    def _build_shadow_page(self) -> None:
+        """结构化跟读练习：生成句子队列 → 逐句播放/录音/评分 → 低分重练 → 汇总。"""
+        page = tk.Frame(self.root, bg=C_BG)
+        self._pages["shadow"] = page
+        self._shadow: ShadowSession | None = None
+        self._shadow_state = "idle"  # idle/loading/ready/recording/scoring/result/done
+        self._shadow_scenario = self._scenario_keys[0] if self._scenario_keys else "daily_smalltalk"
+        self._shadow_difficulty = DIFFICULTY_ORDER[0]
+
+        header = tk.Frame(page, bg=C_BG)
+        header.pack(fill=tk.X, padx=20, pady=(14, 8))
+        self._shadow_title_var = tk.StringVar(value=t("跟读练习"))
+        tk.Label(header, textvariable=self._shadow_title_var, font=_FONT_H2,
+                 bg=C_BG, fg=C_TEXT).pack(side=tk.LEFT)
+        back = PillButton(header, text=t("← 返回"), command=self._shadow_back,
+                          kind="ghost", width=96, height=32, bg=C_BG)
+        back.pack(side=tk.RIGHT)
+
+        # 中部内容区：随状态整体重建
+        self._shadow_body = tk.Frame(page, bg=C_BG)
+        self._shadow_body.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 8))
+        self._shadow_orb = RecordingOrb(page, bg=C_BG)
+        self._shadow_status_var = tk.StringVar(value="")
+        self._shadow_set_state("idle")
+
+        tk.Label(page, textvariable=self._shadow_status_var, font=_FONT_SMALL,
+                 bg=C_BG, fg=C_TEXT2, anchor="w").pack(
+                     side=tk.BOTTOM, fill=tk.X, padx=20, pady=(0, 10))
+
+    def _shadow_set_state(self, state: str) -> None:
+        self._shadow_state = state
+        for child in self._shadow_body.winfo_children():
+            child.destroy()
+        {"idle": self._shadow_build_idle,
+         "loading": self._shadow_build_loading,
+         "ready": self._shadow_build_ready,
+         "recording": self._shadow_build_recording,
+         "scoring": self._shadow_build_scoring,
+         "result": self._shadow_build_result,
+         "done": self._shadow_build_done}[state]()
+
+    def _shadow_status(self, text: str) -> None:
+        self._shadow_status_var.set(text)
+
+    # -- 各状态界面 ---------------------------------------------------
+    def _shadow_build_idle(self) -> None:
+        body = self._shadow_body
+        card = tk.Frame(body, bg=C_CARD, highlightbackground=C_BORDER,
+                        highlightthickness=1)
+        card.pack(fill=tk.X, pady=(8, 12), ipadx=24, ipady=20)
+        tk.Label(card, text=t("跟读练习"), font=_FONT_TITLE, bg=C_CARD,
+                 fg=C_TEXT).pack(anchor="w")
+        tk.Label(card, text=t("AI 生成贴近场景的英文句子，你逐句跟读，"
+                              "系统对发音打分；低分句子会自动安排重练。"),
+                 font=_FONT_SMALL, bg=C_CARD, fg=C_TEXT2,
+                 wraplength=780, justify="left").pack(anchor="w", pady=(6, 0))
+        tk.Label(card, text=t("低分句子会自动插入队尾重练（每句最多 2 次）；"
+                              "成绩计入练习历史。"),
+                 font=_FONT_SMALL, bg=C_CARD, fg=C_TEXT2,
+                 wraplength=780, justify="left").pack(anchor="w", pady=(4, 0))
+
+        row = tk.Frame(body, bg=C_BG)
+        row.pack(anchor="w", pady=(0, 12))
+        tk.Label(row, text=t("句子数量"), font=_FONT_H2, bg=C_BG,
+                 fg=C_TEXT).pack(side=tk.LEFT, padx=(0, 14))
+        self._shadow_count_var = tk.StringVar(value="5")
+        for n in ("3", "5", "8"):
+            tk.Radiobutton(row, text=t("{n} 句", n=n), variable=self._shadow_count_var,
+                           value=n, bg=C_BG, font=_FONT).pack(side=tk.LEFT,
+                                                              padx=(0, 12))
+        PillButton(body, text=t("开始跟读"), command=self._shadow_start,
+                   kind="primary", width=160, height=40,
+                   font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
+        self._shadow_status(t("选择句子数量后开始；使用设置页已选的场景与难度"))
+
+    def _shadow_build_loading(self) -> None:
+        tk.Label(self._shadow_body, text=t("正在生成练习句子…"), font=_FONT_H2,
+                 bg=C_BG, fg=C_TEXT2).pack(expand=True)
+
+    def _shadow_build_ready(self) -> None:
+        session = self._shadow
+        if session is None:
+            return
+        done, left = session.progress
+        self._shadow_progress_var = tk.StringVar(
+            value=t("第 {done} 句 / 共 {total} 句",
+                    done=done + 1, total=session.total_attempts))
+        tk.Label(self._shadow_body, textvariable=self._shadow_progress_var,
+                 font=_FONT_SMALL, bg=C_BG, fg=C_TEXT2).pack(anchor="w")
+        card = tk.Frame(self._shadow_body, bg=C_CARD,
+                        highlightbackground=C_BORDER, highlightthickness=1)
+        card.pack(fill=tk.X, pady=(8, 12), ipadx=24, ipady=28)
+        self._shadow_sentence_var = tk.StringVar(value=session.current or "")
+        tk.Label(card, textvariable=self._shadow_sentence_var,
+                 font=("Microsoft YaHei UI", 15), bg=C_CARD, fg=C_TEXT,
+                 wraplength=780, justify="center").pack(expand=True)
+        row = tk.Frame(self._shadow_body, bg=C_BG)
+        row.pack(anchor="w")
+        PillButton(row, text=t("🔊 播放"), command=self._shadow_play,
+                   kind="ghost", width=110, height=36).pack(side=tk.LEFT,
+                                                            padx=(0, 10))
+        self._shadow_rec_btn = PillButton(
+            row, text=t("🎤 录音"), command=self._shadow_record,
+            kind="primary", width=130, height=36)
+        self._shadow_rec_btn.pack(side=tk.LEFT, padx=(0, 10))
+        PillButton(row, text=t("跳过"), command=self._shadow_skip,
+                   kind="ghost", width=90, height=36).pack(side=tk.LEFT)
+        self._shadow_status(t("就绪 — 点击播放熟悉句子，然后录音跟读（空格键也可以）"))
+
+    def _shadow_build_recording(self) -> None:
+        self._shadow_build_ready()
+        if getattr(self, "_shadow_rec_btn", None) is not None:
+            self._shadow_rec_btn.set_text(t("⏹ 停止并评分"))
+            self._shadow_rec_btn.command = self._shadow_stop_and_score
+            self._shadow_rec_btn._draw()
+        self._shadow_status(t("跟读录音中……读完句子再点一次按钮"))
+
+    def _shadow_build_scoring(self) -> None:
+        self._shadow_build_ready()
+        if getattr(self, "_shadow_rec_btn", None) is not None:
+            self._shadow_rec_btn.set_enabled(False)
+        tk.Label(self._shadow_body, text=t("正在识别与评分…"), font=_FONT_H2,
+                 bg=C_BG, fg=C_TEXT2).pack(anchor="w", pady=(8, 0))
+
+    def _shadow_build_result(self) -> None:
+        recognized, score, outcome = self._shadow_last
+        session = self._shadow
+        card = tk.Frame(self._shadow_body, bg=C_CARD,
+                        highlightbackground=C_BORDER, highlightthickness=1)
+        card.pack(fill=tk.X, pady=(8, 10), ipadx=20, ipady=14)
+        if score is not None:
+            dims = tk.Frame(card, bg=C_CARD)
+            dims.pack(fill=tk.X)
+            for name, val in ((t("总分"), score.overall),
+                              (t("准确度"), score.accuracy),
+                              (t("完整度"), score.integrity),
+                              (t("流利度"), score.fluency)):
+                cell = tk.Frame(dims, bg=C_CARD)
+                cell.pack(side=tk.LEFT, padx=(0, 24))
+                tk.Label(cell, text=f"{val:.0f}", font=_FONT_H2, bg=C_CARD,
+                         fg=C_ACCENT).pack(side=tk.LEFT)
+                tk.Label(cell, text=name, font=_FONT_SMALL, bg=C_CARD,
+                         fg=C_TEXT2).pack(side=tk.LEFT, padx=(4, 0))
+            if getattr(score, "feedback", ""):
+                tk.Label(card, text=t("建议：") + str(score.feedback),
+                         font=_FONT_SMALL, bg=C_CARD, fg=C_TEXT2,
+                         wraplength=760, justify="left").pack(
+                             anchor="w", pady=(8, 0))
+        else:
+            tk.Label(card, text=t("（未配置发音评分，仅显示识别结果；"
+                                  "在 config.yaml 的 assessment 填入 "
+                                  "nls AppKey/Token 后可用真实声学打分）"),
+                     font=_FONT_SMALL, bg=C_CARD, fg=C_TEXT2,
+                     wraplength=760, justify="left").pack(anchor="w")
+        if recognized:
+            tk.Label(card, text=t("识别结果：") + recognized, font=_FONT,
+                     bg=C_CARD, fg=C_TEXT, wraplength=760,
+                     justify="left").pack(anchor="w", pady=(8, 0))
+        else:
+            tk.Label(card, text=t("没有识别到内容"), font=_FONT, bg=C_CARD,
+                     fg=C_TEXT2).pack(anchor="w", pady=(8, 0))
+
+        row = tk.Frame(self._shadow_body, bg=C_BG)
+        row.pack(anchor="w", pady=(4, 0))
+        if not session.finished:
+            PillButton(row, text=t("下一句"), command=self._shadow_next,
+                       kind="primary", width=110, height=36).pack(
+                           side=tk.LEFT, padx=(0, 10))
+        last_sentence = self._shadow_last_sentence
+        if last_sentence and session.requeue_possible(last_sentence):
+            PillButton(row, text=t("再练一次"), command=self._shadow_retry,
+                       kind="secondary", width=110, height=36).pack(
+                           side=tk.LEFT, padx=(0, 10))
+        PillButton(row, text=t("结束练习"), command=self._shadow_finish,
+                   kind="ghost", width=110, height=36).pack(side=tk.LEFT)
+        if outcome == "retry":
+            self._shadow_status(t("得分偏低，已自动加入重练队列"))
+
+    def _shadow_build_done(self) -> None:
+        s = self._shadow_summary
+        card = tk.Frame(self._shadow_body, bg=C_CARD,
+                        highlightbackground=C_BORDER, highlightthickness=1)
+        card.pack(fill=tk.X, pady=(8, 12), ipadx=24, ipady=20)
+        tk.Label(card, text=t("跟读练习总结"), font=_FONT_TITLE, bg=C_CARD,
+                 fg=C_TEXT).pack(anchor="w")
+        lines = [
+            t("练习 {attempts} 次（共 {count} 句，重练 {retry} 次）",
+              attempts=s["attempts"], count=s["sentence_count"],
+              retry=s["retry_count"]),
+        ]
+        if s["scored_count"]:
+            lines.append(t("平均分 —— 总分 {overall}｜准确度 {accuracy}｜"
+                           "完整度 {integrity}｜流利度 {fluency}",
+                           overall=s["avg_overall"], accuracy=s["avg_accuracy"],
+                           integrity=s["avg_integrity"],
+                           fluency=s["avg_fluency"]))
+        else:
+            lines.append(t("本次没有获得评分（未配置发音评分）"))
+        for line in lines:
+            tk.Label(card, text=line, font=_FONT, bg=C_CARD, fg=C_TEXT2,
+                     wraplength=760, justify="left").pack(anchor="w",
+                                                          pady=(6, 0))
+        row = tk.Frame(self._shadow_body, bg=C_BG)
+        row.pack(anchor="w")
+        PillButton(row, text=t("再练一组"), command=self._shadow_start,
+                   kind="primary", width=130, height=38).pack(side=tk.LEFT,
+                                                              padx=(0, 10))
+        PillButton(row, text=t("完成"), command=self._shadow_back,
+                   kind="ghost", width=110, height=38).pack(side=tk.LEFT)
+        self._shadow_status(t("成绩已写入练习历史"))
+
+    # -- 跟读流程 -----------------------------------------------------
+    def _shadow_back(self) -> None:
+        if self.recording:
+            self._cancel_recording()
+        self._show_page("setup")
+
+    def _shadow_start(self) -> None:
+        if self.busy:
+            return
+        self._shadow_scenario, self._shadow_difficulty = self._selected_keys()
+        count = int(getattr(self, "_shadow_count_var", tk.StringVar(value="5")).get())
+        self.busy = True
+        self._shadow_set_state("loading")
+        self._shadow_status(t("正在生成练习句子…"))
+        self._run_worker(self._shadow_gen_worker, count)
+
+    def _shadow_gen_worker(self, count: int) -> None:
+        try:
+            sentences = generate_sentences(
+                self._build_llm(), self._shadow_scenario,
+                self._shadow_difficulty, count)
+        except Exception as exc:
+            self._ui(self._shadow_gen_failed, exc)
+            return
+        self._ui(self._shadow_begin, sentences)
+
+    def _shadow_gen_failed(self, exc) -> None:
+        self.busy = False
+        self._shadow_set_state("idle")
+        self._shadow_status(t("句子生成失败：{exc}", exc=exc))
+
+    def _shadow_begin(self, sentences: list[str]) -> None:
+        self.busy = False
+        self._shadow = ShadowSession(self._shadow_scenario,
+                                     self._shadow_difficulty, sentences)
+        name = resolve_scenario(self._shadow_scenario)["name"]
+        self._shadow_title_var.set(
+            t("跟读练习") + f"｜{name}｜{DIFFICULTIES[self._shadow_difficulty]['name']}")
+        self._shadow_set_state("ready")
+
+    def _shadow_play(self) -> None:
+        sentence = self._shadow.current if self._shadow else None
+        if sentence and self.speaker.available:
+            self.speaker.speak(sentence)
+            self._shadow_status(t("正在播放……"))
+
+    def _shadow_record(self) -> None:
+        if self._shadow_state != "ready" or self.busy:
+            return
+        if self.recorder is None:
+            self.recorder = MicRecorder(self.cfg.sample_rate)
+        try:
+            self.recorder.start()
+        except Exception as exc:
+            self._shadow_status(t("无法开始录音：{exc}", exc=exc))
+            return
+        self.recording = True
+        self._shadow_set_state("recording")
+        self._orb_start(self._shadow_orb)
+
+    def _shadow_stop_and_score(self) -> None:
+        if self._shadow_state != "recording":
+            return
+        self.recording = False
+        self.busy = True
+        self._shadow_set_state("scoring")
+        self._shadow_status(t("正在识别与评分…"))
+        self._run_worker(self._shadow_score_worker)
+
+    def _shadow_skip(self) -> None:
+        if self._shadow is None or self.busy:
+            return
+        outcome = self._shadow.skip()
+        if outcome == "finished":
+            self._shadow_finish()
+        else:
+            self._shadow_set_state("ready")
+
+    def _shadow_score_worker(self) -> None:
+        recognized, score = "", None
+        try:
+            audio = self.recorder.stop()
+            ref = self._shadow.current if self._shadow else ""
+            if self.transcriber is not None:
+                if not self.transcriber.loaded:
+                    self.transcriber.load()
+                recognized = self.transcriber.transcribe(
+                    audio, hotwords=resolve_hotwords(self._shadow_scenario))
+            recognized = (recognized or "").strip()
+            if self.assessor is not None and ref:
+                try:
+                    wav = float32_to_wav_bytes(audio, self.cfg.sample_rate)
+                    accent = accents.assess_accent(
+                        (self.cfg.cloud_tts or {}).get("accent"))
+                    score = self.assessor.evaluate(ref, wav, accent=accent)
+                except Exception as exc:
+                    self._ui(self._shadow_status,
+                             t("发音评分失败：{exc}", exc=exc))
+        except Exception as exc:
+            self._ui(self._shadow_score_failed, exc)
+            return
+        self._ui(self._shadow_show_result, recognized, score)
+
+    def _shadow_score_failed(self, exc) -> None:
+        self.busy = False
+        self.recording = False
+        self._orb_stop(self._shadow_orb)
+        self._shadow_set_state("ready")
+        self._shadow_status(t("识别失败：{exc}", exc=exc))
+
+    def _shadow_show_result(self, recognized: str, score) -> None:
+        self.busy = False
+        self.recording = False
+        self._orb_stop(self._shadow_orb)
+        self._shadow_last_sentence = self._shadow.current
+        outcome = self._shadow.submit(score)
+        self._shadow_last = (recognized, score, outcome)
+        if outcome == "finished":
+            self._shadow_finish()
+            return
+        self._shadow_set_state("result")
+
+    def _shadow_next(self) -> None:
+        self._shadow_set_state("ready")
+
+    def _shadow_retry(self) -> None:
+        sentence = self._shadow_last_sentence
+        if sentence and self._shadow.requeue(sentence):
+            self._shadow_set_state("ready")
+
+    def _shadow_finish(self) -> None:
+        if self._shadow is None:
+            return
+        s = self._shadow.summary()
+        self._shadow_summary = s
+        if s["scored_count"]:
+            try:
+                add_session(
+                    self.history_db, scenario=s["scenario"],
+                    difficulty=s["difficulty"], overall=s["avg_overall"],
+                    accuracy=s["avg_accuracy"], integrity=s["avg_integrity"],
+                    fluency=s["avg_fluency"],
+                    ref_text=t("跟读练习") + f" x{s['attempts']}")
+            except Exception:
+                pass
+        self.busy = False
+        self._shadow_set_state("done")
 
     def _redraw_entry_bg(self, _e=None) -> None:
         self._entry_bg.delete("all")
@@ -929,12 +1462,12 @@ class SpokenApp:
     # 语音自检 / TTS 错误
     # ------------------------------------------------------------------
     def _voice_selfcheck(self) -> None:
-        self._append_system("语音自检：现在应该播放一句英文。"
-                            "如果没听到，请检查系统音量/输出设备（聊天区会提示错误）。")
+        self._append_system(t("语音自检：现在应该播放一句英文。"
+                              "如果没听到，请检查系统音量/输出设备（聊天区会提示错误）。"))
         self.speaker.speak("Voice ready. Let's practice English!")
 
     def _on_tts_error(self, message: str) -> None:
-        self._ui(self._append_system, f"语音合成出错：{message}")
+        self._ui(self._append_system, t("语音合成出错：{message}", message=message))
 
     def _replay_last(self) -> None:
         if self._last_ai_line and self.speaker.available:
@@ -943,25 +1476,29 @@ class SpokenApp:
     # ------------------------------------------------------------------
     # 录音球体动画
     # ------------------------------------------------------------------
-    def _orb_start(self) -> None:
-        self._orb.start()
-        self._orb.place(relx=0.5, rely=0.46, anchor="center")
+    def _orb_start(self, orb=None) -> None:
+        orb = orb or self._orb
+        self._active_orb = orb
+        orb.start()
+        orb.place(relx=0.5, rely=0.46, anchor="center")
         self._orb_tick()
 
-    def _orb_stop(self) -> None:
-        self._orb.stop()
-        self._orb.place_forget()
+    def _orb_stop(self, orb=None) -> None:
+        orb = orb or self._orb
+        orb.stop()
+        orb.place_forget()
         if self._orb_timer is not None:
             self.root.after_cancel(self._orb_timer)
             self._orb_timer = None
 
     def _orb_tick(self) -> None:
-        if not self._orb.visible:
+        orb = getattr(self, "_active_orb", None) or self._orb
+        if not orb.visible:
             self._orb_timer = None
             return
         if self.recorder is not None:
-            self._orb.set_level(getattr(self.recorder, "last_level", 0.0))
-        self._orb.tick()
+            orb.set_level(getattr(self.recorder, "last_level", 0.0))
+        orb.tick()
         # ~30fps：足够流畅且开销极小
         self._orb_timer = self.root.after(33, self._orb_tick)
 
@@ -976,7 +1513,7 @@ class SpokenApp:
         try:
             fn(*args)
         except Exception as exc:  # 兜底：任何后台异常都不许拖垮界面
-            self._ui(self._append_system, f"出现错误：{exc}")
+            self._ui(self._append_system, t("出现错误：{exc}", exc=exc))
             self._ui(self._finish_busy)
 
     def _ui(self, fn, *args) -> None:
@@ -1001,7 +1538,7 @@ class SpokenApp:
         else:
             # 提示 / 纠错 / 系统消息：普通小字体，不进气泡
             if speaker:
-                chat.insert(tk.END, f"{speaker}：", tag)
+                chat.insert(tk.END, f"{speaker}{t('：')}", tag)
             chat.insert(tk.END, f"{text}\n", tag)
         chat.configure(state=tk.DISABLED)
         chat.see(tk.END)
@@ -1013,12 +1550,14 @@ class SpokenApp:
         """渲染纠错与更地道表达；没有错误时什么都不输出（不硬凑）。"""
         for item in result.corrections:
             self._append_chat(
-                "feedback", "💡 纠错",
-                f"“{item.get('original', '')}” → “{item.get('corrected', '')}”"
-                f"（{item.get('reason', '')}）")
+                "feedback", t("💡 纠错"),
+                t("“{original}” → “{corrected}”（{reason}）",
+                  original=item.get("original", ""),
+                  corrected=item.get("corrected", ""),
+                  reason=item.get("reason", "")))
         if result.alternatives:
             self._append_chat(
-                "feedback", "🗣 更地道",
+                "feedback", t("🗣 更地道"),
                 " / ".join(result.alternatives))
 
     # ------------------------------------------------------------------
@@ -1106,10 +1645,10 @@ class SpokenApp:
         self._show_page("welcome")
 
     def _initial_status(self) -> str:
-        parts = [f"模型：{self.cfg.model}"]
-        parts.append("语音识别：" + ("就绪（首次说话时加载）" if self.transcriber
-                                    else "不可用（可打字）"))
-        parts.append("语音合成：" + ("就绪" if self.speaker.available else "不可用"))
+        parts = [t("模型：{model}", model=self.cfg.model)]
+        parts.append(t("语音识别：") + (t("就绪（首次说话时加载）") if self.transcriber
+                                    else t("不可用（可打字）")))
+        parts.append(t("语音合成：") + (t("就绪") if self.speaker.available else t("不可用")))
         return "｜".join(parts)
 
     def _build_llm(self) -> OpenAICompatibleLLM:
@@ -1138,7 +1677,9 @@ class SpokenApp:
             card.set_selected(False)
         self._show_page("chat")
         self._session_var.set(
-            f"{resolve_scenario(scenario)['name']}｜难度：{DIFFICULTIES[difficulty]['name']}")
+            t("会话开始：{name}｜难度：{difficulty}",
+              name=resolve_scenario(scenario)["name"],
+              difficulty=DIFFICULTIES[difficulty]["name"]))
         self._ref_text = ""
         self._set_reference()
         self._finish_typewriter()   # 取消/补全上一场可能未打完的台词
@@ -1147,16 +1688,18 @@ class SpokenApp:
         self.chat.configure(state=tk.DISABLED)
         self.replay_btn.set_enabled(False)
         self._append_system(
-            f"会话开始：{resolve_scenario(scenario)['name']}｜难度：{DIFFICULTIES[difficulty]['name']}")
-        self._set_status("AI 正在开口 …")
+            t("会话开始：{name}｜难度：{difficulty}",
+              name=resolve_scenario(scenario)["name"],
+              difficulty=DIFFICULTIES[difficulty]["name"]))
+        self._set_status(t("AI 正在开口 …"))
         if self.transcriber and not self.transcriber.loaded:
             self._run_worker(self._load_asr_worker)
         self._run_worker(self._opening_worker)
 
     def _load_asr_worker(self) -> None:
-        self._set_status("正在准备语音识别模型（首次需下载，约 150MB）…")
+        self._set_status(t("正在准备语音识别模型（首次需下载，约 150MB）…"))
         self.transcriber.load()
-        self._set_status("语音识别模型就绪")
+        self._set_status(t("语音识别模型就绪"))
 
     def _asr_download_progress(self, filename: str, done: int,
                                total: int) -> None:
@@ -1170,15 +1713,16 @@ class SpokenApp:
         self._last_dl_pct, self._last_dl_t = pct, now
         mb_done, mb_total = done / 1e6, total / 1e6
         self._set_status(
-            f"正在下载语音识别模型 {filename}：{pct}%"
-            f"（{mb_done:.0f}/{mb_total:.0f} MB）")
+            t("正在下载语音识别模型 {filename}：{pct}%（{done}/{total} MB）",
+              filename=filename, pct=pct, done=f"{mb_done:.0f}",
+              total=f"{mb_total:.0f}"))
 
     def _opening_worker(self) -> None:
         try:
             line = self.engine.start()
         except LLMError as exc:
-            self._append_system(f"AI 开口失败：{exc}")
-            self._append_system("请检查 config.yaml 里的 API Key 与网络，然后重试。")
+            self._append_system(t("AI 开口失败：{exc}", exc=exc))
+            self._append_system(t("请检查 config.yaml 里的 API Key 与网络，然后重试。"))
             self._ui(self._reset_after_failed_start)
             return
         self._ui(self._show_ai_line, line)
@@ -1201,7 +1745,7 @@ class SpokenApp:
         self.busy = True
         self._end_btn.set_enabled(False)
         self.mic_btn.set_enabled(False)
-        self._set_status("正在生成本次练习总结 …")
+        self._set_status(t("正在生成本次练习总结 …"))
         self._run_worker(self._summary_worker)
 
     def _summary_worker(self) -> None:
@@ -1212,7 +1756,7 @@ class SpokenApp:
                 report_path = save_report(
                     render_report_markdown(summary), self.cfg.report_dir)
         except Exception as exc:
-            self._ui(self._append_system, f"总结生成失败：{exc}")
+            self._ui(self._append_system, t("总结生成失败：{exc}", exc=exc))
             self._ui(self._reset_ui_after_session)
             return
         self._ui(self._show_summary_dialog, summary, str(report_path or ""))
@@ -1229,21 +1773,21 @@ class SpokenApp:
             try:
                 self.recorder.start()
             except Exception as exc:
-                self._append_system(f"无法开始录音：{exc}")
-                self._append_system("请检查麦克风是否连接、是否被其他程序占用。")
+                self._append_system(t("无法开始录音：{exc}", exc=exc))
+                self._append_system(t("请检查麦克风是否连接、是否被其他程序占用。"))
                 return
             self.recording = True
-            self.mic_btn.set_text("⏹ 停止并发送")
+            self.mic_btn.set_text(t("⏹ 停止并发送"))
             self.mic_btn.set_kind("rec")
-            self._set_status("录音中……说完再点一次按钮")
+            self._set_status(t("录音中……说完再点一次按钮"))
             self._orb_start()
         else:
             self.recording = False
-            self.mic_btn.set_text("🎤 点击说话")
+            self.mic_btn.set_text(t("🎤 点击说话"))
             self.mic_btn.set_kind("primary")
             self.mic_btn.set_enabled(False)
             self.busy = True
-            self._set_status("识别中……")
+            self._set_status(t("识别中……"))
             self._orb_stop()
             if self._rec_mode == "shadow":
                 self._run_worker(self._shadow_worker)
@@ -1255,13 +1799,13 @@ class SpokenApp:
         try:
             audio = self.recorder.stop()
             if self.transcriber is None:
-                raise RuntimeError("语音识别组件不可用（未安装 faster-whisper）")
+                raise RuntimeError(t("语音识别组件不可用（未安装 faster-whisper）"))
             if not self.transcriber.loaded:
-                self._set_status("正在加载语音识别模型（首次需下载，约 150MB）…")
+                self._set_status(t("正在加载语音识别模型（首次需下载，约 150MB）…"))
                 self.transcriber.load()
             text = self.transcriber.transcribe(audio)
         except Exception as exc:
-            self._ui(self._append_system, f"识别失败：{exc}")
+            self._ui(self._append_system, t("识别失败：{exc}", exc=exc))
             self._ui(self._finish_busy)
             return
         self._ui(self._on_recognized, text)
@@ -1271,7 +1815,7 @@ class SpokenApp:
         self.busy = False
         text = (text or "").strip()
         if not text:
-            self._set_status("没有识别到内容，请再试一次")
+            self._set_status(t("没有识别到内容，请再试一次"))
             return
         self.input_var.set(text)
         self._send(text)
@@ -1284,9 +1828,9 @@ class SpokenApp:
         if not text or not self.session_active or self.busy:
             return
         self.input_var.set("")
-        self._append_chat("user", "你", text)
+        self._append_chat("user", t("你"), text)
         self.busy = True
-        self._set_status("AI 思考中 …")
+        self._set_status(t("AI 思考中 …"))
         self._run_worker(self._turn_worker, text)
 
     def _turn_worker(self, text: str) -> None:
@@ -1294,7 +1838,7 @@ class SpokenApp:
             result = self.engine.reply(text)
         except LLMError as exc:
             self.engine.rollback_last_user()
-            self._ui(self._append_system, f"模型调用失败：{exc}（请重试或结束对话）")
+            self._ui(self._append_system, t("模型调用失败：{exc}（请重试或结束对话）", exc=exc))
             self._ui(self._finish_busy)
             return
         self._ui(self._show_turn_result, result)
@@ -1304,20 +1848,22 @@ class SpokenApp:
         if result.difficulty_changed:
             old, new = result.difficulty_changed
             self._append_system(
-                f"难度调整：{DIFFICULTIES[old]['name']} → {DIFFICULTIES[new]['name']}")
+                t("难度调整：{old} → {new}",
+                  old=DIFFICULTIES[old]["name"], new=DIFFICULTIES[new]["name"]))
         self._render_feedback(result)
         if result.stuck:
-            self._append_chat("hint", "💡 卡壳提示",
-                              result.hint or "别急，试着用一个简单的句子回答。")
+            self._append_chat("hint", t("💡 卡壳提示"),
+                              result.hint or t("别急，试着用一个简单的句子回答。"))
         if result.ai_line:
             self._show_ai_line(result.ai_line)
             if self.cfg.auto_speak:
                 self.speaker.speak(result.ai_line)
         if result.should_end:
-            self._append_system(f"（{result.end_reason or '场景目标已达成'}）")
+            self._append_system(
+                f"（{result.end_reason or t('场景目标已达成')}）")
             self._end_session()
             return
-        self._set_status("就绪 — 点击麦克风说话，或输入文字")
+        self._set_status(t("就绪 — 点击麦克风说话，或输入文字"))
 
     # ------------------------------------------------------------------
     # 状态复位
@@ -1326,7 +1872,7 @@ class SpokenApp:
         self.busy = False
         if self.session_active:
             self.mic_btn.set_enabled(True)
-            self._set_status("就绪 — 点击麦克风说话，或输入文字")
+            self._set_status(t("就绪 — 点击麦克风说话，或输入文字"))
 
     def _reset_ui_after_session(self) -> None:
         self._finish_typewriter()
@@ -1335,7 +1881,7 @@ class SpokenApp:
         self._start_btn.set_enabled(True)
         self._end_btn.set_enabled(False)
         self.mic_btn.set_enabled(True)
-        self.mic_btn.set_text("🎤 点击说话")
+        self.mic_btn.set_text(t("🎤 点击说话"))
         self.mic_btn.set_kind("primary")
         self._orb_stop()
         self._show_page("setup")
@@ -1349,7 +1895,7 @@ class SpokenApp:
     # ------------------------------------------------------------------
     def _show_summary_dialog(self, summary: dict, report_path: str) -> None:
         dialog = tk.Toplevel(self.root)
-        dialog.title("本次练习总结")
+        dialog.title(t("本次练习总结"))
         dialog.geometry("560x480")
         dialog.transient(self.root)
         dialog.configure(bg=C_BG)
@@ -1365,10 +1911,10 @@ class SpokenApp:
 
         text.insert(tk.END, render_summary_text(summary))
         if report_path:
-            text.insert(tk.END, f"\n\n📄 报告已保存：{report_path}")
+            text.insert(tk.END, "\n\n" + t("📄 报告已保存：{path}", path=report_path))
         text.configure(state=tk.DISABLED)
 
-        ok = PillButton(dialog, text="好的", width=110, height=36,
+        ok = PillButton(dialog, text=t("好的"), width=110, height=36,
                         command=lambda: (dialog.destroy(),
                                          self._reset_ui_after_session()),
                         bg=C_BG)
@@ -1382,11 +1928,11 @@ class SpokenApp:
     def _set_reference(self) -> None:
         parts = []
         if self._ref_text:
-            parts.append("📖 参考句：" + self._ref_text)
+            parts.append(t("📖 参考句：") + self._ref_text)
         sc = self._scenario_keys[self._scenario_idx]
         kw = resolve_hotwords(sc)
         if kw:
-            parts.append("🔑 关键词：" + kw)
+            parts.append(t("🔑 关键词：") + kw)
         if parts and getattr(self, "_ref_label", None) is not None:
             self._ref_label.config(text="\n".join(parts))
 
@@ -1401,13 +1947,13 @@ class SpokenApp:
         try:
             self.recorder.start()
         except Exception as exc:
-            self._append_system(f"无法开始录音：{exc}")
+            self._append_system(t("无法开始录音：{exc}", exc=exc))
             return
         self._rec_mode = "shadow"
         self.recording = True
-        self.mic_btn.set_text("⏹ 停止并评分")
+        self.mic_btn.set_text(t("⏹ 停止并评分"))
         self.mic_btn.set_kind("rec")
-        self._set_status("跟读录音中……读完参考句再点一次按钮")
+        self._set_status(t("跟读录音中……读完参考句再点一次按钮"))
         self._orb_start()
 
     def _shadow_worker(self) -> None:
@@ -1429,13 +1975,13 @@ class SpokenApp:
                         (self.cfg.cloud_tts or {}).get("accent"))
                     score = self.assessor.evaluate(ref, wav, accent=accent)
                 except Exception as exc:
-                    self._ui(self._append_system, f"发音评分失败：{exc}")
+                    self._ui(self._append_system, t("发音评分失败：{exc}", exc=exc))
             elif ref and self.assessor is None:
                 self._ui(self._append_system,
-                         "（未配置发音评分：在 config.yaml 的 assessment 填入 "
-                         "nls AppKey/Token 后可用真实声学打分）")
+                         t("（未配置发音评分：在 config.yaml 的 assessment 填入 "
+                           "nls AppKey/Token 后可用真实声学打分）"))
         except Exception as exc:
-            self._ui(self._append_system, f"跟读识别失败：{exc}")
+            self._ui(self._append_system, t("跟读识别失败：{exc}", exc=exc))
             self._ui(self._finish_busy)
             self._rec_mode = "chat"
             return
@@ -1446,9 +1992,9 @@ class SpokenApp:
         self.mic_btn.set_enabled(True)
         self.busy = False
         if recognized:
-            self._append_chat("user", "你（跟读）", recognized)
+            self._append_chat("user", t("你（跟读）"), recognized)
         else:
-            self._append_system("没有识别到内容")
+            self._append_system(t("没有识别到内容"))
         if score is not None:
             scenario, difficulty = self._selected_keys()
             try:
@@ -1461,23 +2007,24 @@ class SpokenApp:
                 pass
             self._ui(self._show_score_dialog, score)
             self._set_status(
-                f"跟读评分：总分 {score.overall:.0f}｜准确度 {score.accuracy:.0f}｜"
-                f"完整度 {score.integrity:.0f}｜流利度 {score.fluency:.0f}")
+                t("跟读评分：总分 {overall}｜准确度 {accuracy}｜完整度 {integrity}｜流利度 {fluency}",
+                  overall=f"{score.overall:.0f}", accuracy=f"{score.accuracy:.0f}",
+                  integrity=f"{score.integrity:.0f}", fluency=f"{score.fluency:.0f}"))
         else:
-            self._set_status("就绪 — 点击麦克风说话，或输入文字")
+            self._set_status(t("就绪 — 点击麦克风说话，或输入文字"))
 
     def _show_score_dialog(self, score) -> None:
         dialog = tk.Toplevel(self.root)
-        dialog.title("跟读评分")
+        dialog.title(t("跟读评分"))
         dialog.geometry("460x380")
         dialog.transient(self.root)
         dialog.configure(bg=C_BG)
         frame = tk.Frame(dialog, bg=C_BG, padx=16, pady=16)
         frame.pack(fill=tk.BOTH, expand=True)
-        tk.Label(frame, text="发音评分结果", font=_FONT_H2, bg=C_BG,
+        tk.Label(frame, text=t("发音评分结果"), font=_FONT_H2, bg=C_BG,
                  fg=C_TEXT).pack(anchor="w")
-        rows = [("总分", score.overall), ("准确度", score.accuracy),
-                ("完整度", score.integrity), ("流利度", score.fluency)]
+        rows = [(t("总分"), score.overall), (t("准确度"), score.accuracy),
+                (t("完整度"), score.integrity), (t("流利度"), score.fluency)]
         for name, val in rows:
             r = tk.Frame(frame, bg=C_BG)
             r.pack(fill=tk.X, pady=4)
@@ -1490,10 +2037,10 @@ class SpokenApp:
             pct = max(0.0, min(100.0, val)) / 100.0
             bar.create_rectangle(0, 2, 200 * pct, 12, fill=C_ACCENT, outline="")
             bar.create_rectangle(0, 2, 200, 12, outline=C_BORDER, fill=C_CARD)
-        tk.Label(frame, text="建议：" + score.feedback, font=_FONT_SMALL, bg=C_BG,
+        tk.Label(frame, text=t("建议：") + score.feedback, font=_FONT_SMALL, bg=C_BG,
                  fg=C_TEXT2, wraplength=420, justify="left").pack(
                      anchor="w", pady=(10, 0))
-        ok = PillButton(dialog, text="好的", width=110, height=36,
+        ok = PillButton(dialog, text=t("好的"), width=110, height=36,
                         command=dialog.destroy, bg=C_BG)
         ok.pack(pady=(12, 14))
 
@@ -1502,52 +2049,68 @@ class SpokenApp:
     # ------------------------------------------------------------------
     def _open_voice_settings(self) -> None:
         dialog = tk.Toplevel(self.root)
-        dialog.title("语音设置")
-        dialog.geometry("480x760")
+        dialog.title(t("语音设置"))
+        # 高度自适应：小屏 / 高 DPI 下不超出屏幕（内容超出时主体可滚动）
+        dialog.geometry(f"480x{min(760, int(dialog.winfo_screenheight() * 0.9))}")
         dialog.transient(self.root)
         dialog.configure(bg=C_BG)
 
-        tk.Label(dialog, text="发音人（本地 SAPI）", font=_FONT_H2, bg=C_BG,
+        # 可滚动主体：口音选项多、高 DPI 屏内容易超出；
+        # 底部按钮与提示固定在对话框底部，永远可见
+        canvas = tk.Canvas(dialog, bg=C_BG, highlightthickness=0)
+        bar = ttk.Scrollbar(dialog, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=bar.set)
+        bar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 2), pady=6)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=6)
+        body = tk.Frame(canvas, bg=C_BG)
+        canvas.create_window((0, 0), window=body, anchor="nw")
+        body.bind("<Configure>",
+                  lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        def _wheel(event: tk.Event) -> None:
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+
+        tk.Label(body, text=t("发音人（本地 SAPI）"), font=_FONT_H2, bg=C_BG,
                  fg=C_TEXT).pack(anchor="w", padx=16, pady=(14, 4))
         voices = tts_list_voices()
-        voice_names = ["（系统默认 / 自动选英文）"] + [
+        voice_names = [t("（系统默认 / 自动选英文）")] + [
             v.get("name", "?") for v in voices]
         voice_ids = [""] + [v.get("id", "") for v in voices]
         voice_var = tk.StringVar(value=self.cfg.tts_voice or voice_names[0])
-        ttk.Combobox(dialog, textvariable=voice_var, values=voice_names,
+        ttk.Combobox(body, textvariable=voice_var, values=voice_names,
                      state="readonly", width=42).pack(
                          anchor="w", padx=16, pady=(0, 8))
 
-        tk.Label(dialog, text="语速", font=_FONT_H2, bg=C_BG,
+        tk.Label(body, text=t("语速"), font=_FONT_H2, bg=C_BG,
                  fg=C_TEXT).pack(anchor="w", padx=16, pady=(4, 2))
         speed_var = tk.StringVar(value=self.cfg.tts_speed or "medium")
         for s in ("slow", "medium", "fast"):
-            tk.Radiobutton(dialog, text={"slow": "慢", "medium": "中",
-                            "fast": "快"}[s], variable=speed_var, value=s,
+            tk.Radiobutton(body, text={"slow": t("慢"), "medium": t("中"),
+                            "fast": t("快")}[s], variable=speed_var, value=s,
                             bg=C_BG).pack(anchor="w", padx=24)
 
-        tk.Label(dialog, text="音量", font=_FONT_H2, bg=C_BG,
+        tk.Label(body, text=t("音量"), font=_FONT_H2, bg=C_BG,
                  fg=C_TEXT).pack(anchor="w", padx=16, pady=(6, 2))
         vol_var = tk.IntVar(value=self.cfg.tts_volume)
-        tk.Scale(dialog, from_=0, to=100, orient=tk.HORIZONTAL,
+        tk.Scale(body, from_=0, to=100, orient=tk.HORIZONTAL,
                  variable=vol_var, bg=C_BG).pack(
                      anchor="w", padx=16, fill=tk.X)
 
-        tk.Label(dialog, text="云端 TTS（CosyVoice，可选）", font=_FONT_H2,
+        tk.Label(body, text=t("云端 TTS（CosyVoice，可选）"), font=_FONT_H2,
                  bg=C_BG, fg=C_TEXT).pack(anchor="w", padx=16, pady=(8, 2))
         cloud_cfg = self.cfg.cloud_tts or {}
         cloud_on = tk.BooleanVar(value=bool(cloud_cfg.get("enabled")))
-        tk.Checkbutton(dialog, text="启用云端 TTS（音色更清晰）",
+        tk.Checkbutton(body, text=t("启用云端 TTS（音色更清晰）"),
                        variable=cloud_on, bg=C_BG).pack(anchor="w", padx=16)
 
-        tk.Label(dialog, text="口音 / 发音人（CosyVoice 官方音色）", bg=C_BG,
+        tk.Label(body, text=t("口音 / 发音人（CosyVoice 官方音色）"), bg=C_BG,
                  fg=C_TEXT, font=_FONT_SMALL).pack(anchor="w", padx=16,
                                                    pady=(4, 0))
         accent_key = accents.get_accent(cloud_cfg.get("accent"))["key"]
         if not accents.is_available(accent_key):
             accent_key = accents.DEFAULT_ACCENT
         accent_var = tk.StringVar(value=accent_key)
-        acc_frame = tk.Frame(dialog, bg=C_BG)
+        acc_frame = tk.Frame(body, bg=C_BG)
         acc_frame.pack(anchor="w", padx=24, fill=tk.X)
         for a in accents.ACCENTS:
             usable = a["available"] and a["english"]
@@ -1555,26 +2118,38 @@ class SpokenApp:
                 text = f"{a['label']}（{a['country']}）"
                 fg = C_TEXT
             elif a["available"]:
-                text = f"{a['label']}（{a['country']}）· 非英语口音"
+                text = f"{a['label']}（{a['country']}）{t('· 非英语口音')}"
                 fg = C_TEXT2
             else:
-                text = f"{a['label']}（{a['country']}）· 暂不支持"
+                text = f"{a['label']}（{a['country']}）{t('· 暂不支持')}"
                 fg = C_TEXT3
             tk.Radiobutton(
                 acc_frame, text=text, variable=accent_var, value=a["key"],
                 bg=C_BG, font=_FONT_SMALL, selectcolor=C_BG, anchor="w",
                 state=(tk.NORMAL if a["available"] else tk.DISABLED),
                 fg=fg).pack(anchor="w")
-        tk.Label(dialog, text="· 泰/印/越/马/哈/乌：CosyVoice 官方暂无音色；"
-                 "日/韩音色只朗读对应语言。缺少的口音可在下方自定义音色 ID 接入。",
+        tk.Label(body, text=t("· 泰/印/越/马/哈/乌：CosyVoice 官方暂无音色；"
+                              "日/韩音色只朗读对应语言。缺少的口音可在下方自定义音色 ID 接入。"),
                  bg=C_BG, fg=C_TEXT2, font=_FONT_SMALL, wraplength=440,
                  justify="left").pack(anchor="w", padx=16, pady=(2, 0))
-        tk.Label(dialog, text="自定义音色 ID（可选，填了则忽略上面的选择）",
+        tk.Label(body, text=t("自定义音色 ID（可选，填了则忽略上面的选择）"),
                  bg=C_BG, fg=C_TEXT2, font=_FONT_SMALL).pack(
                      anchor="w", padx=16, pady=(6, 0))
         custom_var = tk.StringVar(value=cloud_cfg.get("custom_voice", ""))
-        tk.Entry(dialog, textvariable=custom_var, width=42).pack(
+        tk.Entry(body, textvariable=custom_var, width=42).pack(
             anchor="w", padx=16, pady=(0, 2))
+
+        # 滚轮滚动：内容构建完成后再统一绑定，覆盖全部子控件
+        # （Combobox 除外——它的滚轮默认用于切换选项）
+        def _bind_wheel(widget: tk.Misc) -> None:
+            if not isinstance(widget, ttk.Combobox):
+                try:
+                    widget.bind("<MouseWheel>", _wheel, add="+")
+                except tk.TclError:
+                    pass
+            for child in widget.winfo_children():
+                _bind_wheel(child)
+        _bind_wheel(body)
 
         def _save():
             selected = voice_var.get()
@@ -1582,6 +2157,18 @@ class SpokenApp:
             new_voice = voice_ids[idx]
             accent_val = accent_var.get()
             custom = custom_var.get().strip()
+            # 与当前配置完全一致时静默关闭：不写盘、不播确认语音
+            if (
+                new_voice == (self.cfg.tts_voice or "")
+                and speed_var.get() == (self.cfg.tts_speed or "medium")
+                and int(vol_var.get()) == int(self.cfg.tts_volume)
+                and bool(cloud_on.get()) == bool(cloud_cfg.get("enabled"))
+                and accents.get_accent(accent_val)["key"]
+                == accents.get_accent(cloud_cfg.get("accent"))["key"]
+                and custom == str(cloud_cfg.get("custom_voice") or "")
+            ):
+                dialog.destroy()
+                return
             patch = {
                 "voice": {"tts_voice": new_voice, "tts_speed": speed_var.get(),
                           "tts_volume": vol_var.get()},
@@ -1595,20 +2182,30 @@ class SpokenApp:
                 cloud_on.get(), accent_val, custom)
             dialog.destroy()
 
-        save_btn = PillButton(dialog, text="保存", width=110, height=36,
-                              command=_save, bg=C_BG)
-        save_btn.pack(pady=(10, 14))
+        # 关闭窗口（右上角 X）= 应用当前设置，与「保存」等效；
+        # 想放弃改动请点「取消」。避免"调完设置随手关窗却丢了修改"。
+        dialog.protocol("WM_DELETE_WINDOW", _save)
+        btn_row = tk.Frame(dialog, bg=C_BG)
+        btn_row.pack(side=tk.BOTTOM, pady=(6, 12))
+        tk.Label(dialog, text=t("关闭窗口将自动应用当前设置"),
+                 bg=C_BG, fg=C_TEXT3, font=_FONT_SMALL).pack(
+                     side=tk.BOTTOM, pady=(2, 0))
+        PillButton(btn_row, text=t("取消"), command=dialog.destroy,
+                   kind="ghost", width=110, height=36).pack(
+                       side=tk.LEFT, padx=(0, 12))
+        PillButton(btn_row, text=t("保存"), command=_save,
+                   width=110, height=36).pack(side=tk.LEFT)
 
     # ------------------------------------------------------------------
     # API 配置（首次运行引导 + 随时修改）
     # ------------------------------------------------------------------
     _API_PRESETS = (
-        ("通义千问", "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        (t("通义千问"), "https://dashscope.aliyuncs.com/compatible-mode/v1",
          "qwen-plus"),
         ("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
         ("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini"),
         ("Moonshot", "https://api.moonshot.cn/v1", "moonshot-v1-8k"),
-        ("Ollama 本地", "http://localhost:11434/v1", "qwen2.5:3b"),
+        (t("Ollama 本地"), "http://localhost:11434/v1", "qwen2.5:3b"),
     )
 
     def _open_api_setup(self, first_run: bool = False) -> None:
@@ -1623,7 +2220,7 @@ class SpokenApp:
             return
         dlg = tk.Toplevel(self.root)
         self._api_dlg = dlg
-        dlg.title("API 配置")
+        dlg.title(t("API 配置"))
         dlg.configure(bg=C_BG)
         dlg.transient(self.root)
         dlg.resizable(False, False)
@@ -1632,9 +2229,9 @@ class SpokenApp:
         except tk.TclError:
             pass
 
-        tk.Label(dlg, text="🔑 连接 AI 服务", font=_FONT_H2, bg=C_BG,
+        tk.Label(dlg, text=t("🔑 连接 AI 服务"), font=_FONT_H2, bg=C_BG,
                  fg=C_TEXT).pack(anchor="w", padx=28, pady=(20, 2))
-        tk.Label(dlg, text="支持任意 OpenAI 兼容接口；保存后立即可用。",
+        tk.Label(dlg, text=t("支持任意 OpenAI 兼容接口；保存后立即可用。"),
                  font=_FONT_SMALL, bg=C_BG, fg=C_TEXT2).pack(
                      anchor="w", padx=28, pady=(0, 12))
 
@@ -1648,7 +2245,7 @@ class SpokenApp:
         def apply_preset(url: str, model: str) -> None:
             url_var.set(url)
             model_var.set(model)
-            hint.set(f"已选择预设，填入你的 API Key 后点「保存」")
+            hint.set(t("已选择预设，填入你的 API Key 后点「保存」"))
 
         for name, url, model in self._API_PRESETS:
             PillButton(preset_row, text=name,
@@ -1664,9 +2261,9 @@ class SpokenApp:
             ent.pack(padx=28)
             return ent
 
-        row("接口地址（Base URL）", url_var)
+        row(t("接口地址（Base URL）"), url_var)
         row("API Key", key_var, show="*")
-        row("模型名称", model_var)
+        row(t("模型名称"), model_var)
 
         hint = tk.StringVar(value="")
         tk.Label(dlg, textvariable=hint, font=_FONT_SMALL, bg=C_BG,
@@ -1679,11 +2276,11 @@ class SpokenApp:
             api_key = key_var.get().strip()
             model = model_var.get().strip()
             if not base_url or not model:
-                err_var.set("接口地址与模型名称不能为空。")
+                err_var.set(t("接口地址与模型名称不能为空。"))
                 return
             if not api_key and not any(
                     h in base_url for h in ("localhost", "127.0.0.1")):
-                err_var.set("请填入 API Key（本地 Ollama 可留空）。")
+                err_var.set(t("请填入 API Key（本地 Ollama 可留空）。"))
                 return
             if not api_key:
                 api_key = "ollama"   # Ollama 不校验 Key，但字段不能为空
@@ -1692,13 +2289,13 @@ class SpokenApp:
             self.cfg = load_config()
             dlg.destroy()
             self._append_system(
-                "✅ API 配置已保存，现在可以开始对话了。")
+                t("✅ API 配置已保存，现在可以开始对话了。"))
 
         btn_row = tk.Frame(dlg, bg=C_BG)
         btn_row.pack(pady=16)
-        PillButton(btn_row, text="保存", command=save, kind="primary",
+        PillButton(btn_row, text=t("保存"), command=save, kind="primary",
                    width=110, height=34).pack(side=tk.LEFT, padx=(0, 12))
-        PillButton(btn_row, text="稍后再说",
+        PillButton(btn_row, text=t("稍后再说"),
                    command=dlg.destroy, kind="ghost",
                    width=110, height=34).pack(side=tk.LEFT)
         tk.Label(dlg, textvariable=err_var, font=_FONT_SMALL, bg=C_BG,
@@ -1728,7 +2325,7 @@ class SpokenApp:
             with open(path, "w", encoding="utf-8") as f:
                 yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
         except Exception as exc:
-            self._append_system(f"保存语音设置失败：{exc}")
+            self._append_system(t("保存语音设置失败：{exc}", exc=exc))
 
     def _apply_voice_settings(self, voice, speed, volume, cloud_on,
                               accent, custom_voice="") -> None:
@@ -1754,20 +2351,24 @@ class SpokenApp:
     # ------------------------------------------------------------------
     def _open_history(self) -> None:
         dialog = tk.Toplevel(self.root)
-        dialog.title("练习历史")
+        dialog.title(t("练习历史"))
         dialog.geometry("560x540")
         dialog.transient(self.root)
         dialog.configure(bg=C_BG)
         s = history_stats(self.history_db)
-        tk.Label(dialog, text=f"练习历史（共 {s.count} 次）", font=_FONT_H2,
-                 bg=C_BG, fg=C_TEXT).pack(anchor="w", padx=14, pady=(12, 4))
-        tk.Label(dialog, text=f"平均分 —— 总分 {s.avg_overall}｜准确度 "
-                 f"{s.avg_accuracy}｜完整度 {s.avg_integrity}｜流利度 "
-                 f"{s.avg_fluency}", font=_FONT_SMALL, bg=C_BG,
+        tk.Label(dialog, text=t("练习历史（共 {count} 次）", count=s.count),
+                 font=_FONT_H2, bg=C_BG, fg=C_TEXT).pack(
+                     anchor="w", padx=14, pady=(12, 4))
+        tk.Label(dialog, text=t("平均分 —— 总分 {overall}｜准确度 {accuracy}｜"
+                                "完整度 {integrity}｜流利度 {fluency}",
+                                overall=s.avg_overall, accuracy=s.avg_accuracy,
+                                integrity=s.avg_integrity,
+                                fluency=s.avg_fluency),
+                 font=_FONT_SMALL, bg=C_BG,
                  fg=C_TEXT2).pack(anchor="w", padx=14, pady=(0, 6))
-        canvas = tk.Canvas(dialog, height=140, bg=C_CARD, highlightthickness=0)
+        canvas = tk.Canvas(dialog, height=150, bg=C_CARD, highlightthickness=0)
         canvas.pack(fill=tk.X, padx=14, pady=(0, 8))
-        self._draw_trend(canvas, s.trend)
+        self._draw_trend(canvas, s)
         listbox = tk.Text(dialog, wrap=tk.WORD, font=_FONT_SMALL, bg=C_CARD,
                           relief=tk.FLAT, bd=0, height=10)
         listbox.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 12))
@@ -1779,57 +2380,80 @@ class SpokenApp:
             diff = DIFFICULTIES.get(item["difficulty"], {}).get(
                 "name", item["difficulty"])
             listbox.insert(tk.END,
-                           f"{item['ts']}  {sc}/{diff}  总分 {item['overall']}\n")
+                           t("{ts}  {scenario}/{difficulty}  {overall_label} {overall}\n",
+                             ts=item["ts"], scenario=sc, difficulty=diff,
+                             overall_label=t("总分"), overall=item["overall"]))
         listbox.configure(state=tk.DISABLED)
 
     @staticmethod
-    def _draw_trend(canvas, trend) -> None:
-        w, h = 520, 130
+    def _draw_trend(canvas, s) -> None:
+        """分维度趋势图：总分 / 准确度 / 完整度 / 流利度 四条折线 + 图例。"""
+        w, h = 520, 150
         canvas.config(width=w, height=h)
-        if not trend:
-            canvas.create_text(w / 2, h / 2, text="暂无数据", fill=C_TEXT3)
+        dims = [("overall", t("总分"), C_ACCENT),
+                ("accuracy", t("准确度"), C_GREEN),
+                ("integrity", t("完整度"), C_TAG_FEEDBACK),
+                ("fluency", t("流利度"), C_TAG_HINT)]
+        if not s.trend:
+            canvas.create_text(w / 2, h / 2, text=t("暂无数据"), fill=C_TEXT3)
             return
-        n = len(trend)
-        xs = [i / max(1, n - 1) * (w - 40) + 20 for i in range(n)]
-        vals = [v for _, v in trend]
-        ys = [h - 20 - (v / 100.0) * (h - 40) for v in vals]
-        canvas.create_line(20, h - 20, w - 20, h - 20, fill=C_BORDER)
-        canvas.create_line(20, 20, 20, h - 20, fill=C_BORDER)
-        if n > 1:
+        # 图例（顶部一行）
+        lx = 14
+        for _key, label, color in dims:
+            canvas.create_rectangle(lx, 6, lx + 10, 16, fill=color, outline="")
+            canvas.create_text(lx + 14, 11, text=label, font=_FONT_SMALL,
+                               fill=C_TEXT2, anchor="w")
+            lx += 14 + 7 * len(label) + 16
+        base_y = h - 24
+        canvas.create_line(20, base_y, w - 20, base_y, fill=C_BORDER)
+        canvas.create_line(20, 18, 20, base_y, fill=C_BORDER)
+        # 横轴以总分的日期为基准（分维度缺数据的日期跳过该点）
+        days = [d for d, _ in s.trends.get("overall", [])]
+        n = len(days)
+        xs = {day: (20 + i / (n - 1) * (w - 40) if n > 1 else w / 2)
+              for i, day in enumerate(days)}
+        for key, _label, color in dims:
             pts = []
-            for x, y in zip(xs, ys):
-                pts.extend((x, y))
-            canvas.create_line(*pts, fill=C_ACCENT, width=2)
-        for x, y, v in zip(xs, ys, vals):
-            canvas.create_oval(x - 3, y - 3, x + 3, y + 3,
-                               fill=C_ACCENT, outline="")
-            canvas.create_text(x, y - 10, text=f"{v:.0f}", font=_FONT_SMALL,
-                               fill=C_TEXT2)
-        canvas.create_text(xs[0], h - 8, text=trend[0][0][5:],
-                           font=_FONT_SMALL, fill=C_TEXT3)
-        if n > 1:
-            canvas.create_text(xs[-1], h - 8, text=trend[-1][0][5:],
+            for day, val in s.trends.get(key, []):
+                if day in xs:
+                    pts.extend((xs[day], base_y - (val / 100.0) * (base_y - 26)))
+            if len(pts) >= 4:
+                canvas.create_line(*pts, fill=color, width=2)
+                for i in range(0, len(pts), 2):
+                    canvas.create_oval(pts[i] - 2.5, pts[i + 1] - 2.5,
+                                       pts[i] + 2.5, pts[i + 1] + 2.5,
+                                       fill=color, outline="")
+        if days:
+            canvas.create_text(xs[days[0]], base_y + 12, text=days[0][5:],
                                font=_FONT_SMALL, fill=C_TEXT3)
+            if n > 1:
+                canvas.create_text(xs[days[-1]], base_y + 12, text=days[-1][5:],
+                                   font=_FONT_SMALL, fill=C_TEXT3)
 
     # ------------------------------------------------------------------
     # 智能生词本（查询收藏 / 卡片列表 / 搜索 / 排序 / 删除）
     # ------------------------------------------------------------------
     def _open_vocab(self) -> None:
         dialog = tk.Toplevel(self.root)
-        dialog.title("智能生词本")
+        dialog.title(t("智能生词本"))
         dialog.geometry("700x660")
         dialog.transient(self.root)
         dialog.configure(bg=C_BG)
 
         self._vocab_dialog = dialog
-        self._vocab_db = Path("vocab.db")
+        self._vocab_db = data_file("vocab.db")
 
         # 标题 + 计数
-        tk.Label(dialog, text="智能生词本", font=_FONT_TITLE, bg=C_BG,
+        tk.Label(dialog, text=t("智能生词本"), font=_FONT_TITLE, bg=C_BG,
                  fg=C_TEXT).pack(anchor="w", padx=18, pady=(16, 2))
         self._vocab_count_var = tk.StringVar(value="")
         tk.Label(dialog, textvariable=self._vocab_count_var, font=_FONT_SMALL,
                  bg=C_BG, fg=C_TEXT2).pack(anchor="w", padx=18, pady=(0, 6))
+
+        # 今日待复习（遗忘曲线排期）
+        self._vocab_due_frame = tk.Frame(dialog, bg=C_BG)
+        self._vocab_due_frame.pack(fill=tk.X, padx=18, pady=(0, 6))
+        self._render_vocab_due()
 
         # 查询并收藏
         lookup = tk.Frame(dialog, bg=C_BG)
@@ -1839,7 +2463,7 @@ class SpokenApp:
                        font=_FONT, bg=C_CARD, relief=tk.FLAT, bd=0,
                        insertbackground=C_TEXT, fg=C_TEXT)
         ent.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=6)
-        qbtn = PillButton(lookup, text="🔍 查询并收藏",
+        qbtn = PillButton(lookup, text=t("🔍 查询并收藏"),
                           command=self._vocab_lookup, kind="primary",
                           width=132, height=34, bg=C_BG)
         qbtn.pack(side=tk.LEFT, padx=(8, 0))
@@ -1851,7 +2475,7 @@ class SpokenApp:
         # 搜索 + 排序
         ctrl = tk.Frame(dialog, bg=C_BG)
         ctrl.pack(fill=tk.X, padx=18, pady=(0, 4))
-        tk.Label(ctrl, text="搜索", bg=C_BG, fg=C_TEXT2,
+        tk.Label(ctrl, text=t("搜索"), bg=C_BG, fg=C_TEXT2,
                  font=_FONT_SMALL).pack(side=tk.LEFT)
         self._vocab_search_var = tk.StringVar()
         self._vocab_search_var.trace_add(
@@ -1861,10 +2485,10 @@ class SpokenApp:
                       fg=C_TEXT)
         se.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=3, padx=(6, 12))
         self._vocab_sort_var = tk.StringVar(value="time")
-        tk.Radiobutton(ctrl, text="按时间", variable=self._vocab_sort_var,
+        tk.Radiobutton(ctrl, text=t("按时间"), variable=self._vocab_sort_var,
                        value="time", bg=C_BG, font=_FONT_SMALL,
                        command=self._render_vocab_list).pack(side=tk.LEFT)
-        tk.Radiobutton(ctrl, text="按字母", variable=self._vocab_sort_var,
+        tk.Radiobutton(ctrl, text=t("按字母"), variable=self._vocab_sort_var,
                        value="alpha", bg=C_BG, font=_FONT_SMALL,
                        command=self._render_vocab_list).pack(
                            side=tk.LEFT, padx=(8, 0))
@@ -1891,6 +2515,115 @@ class SpokenApp:
         dlg = getattr(self, "_vocab_dialog", None)
         return dlg is not None and dlg.winfo_exists()
 
+    # -- 复习排期（遗忘曲线） -----------------------------------------
+    def _render_vocab_due(self) -> None:
+        """渲染「今日待复习」区：到期单词 + 认识/模糊/忘记 三个反馈按钮。"""
+        frame = getattr(self, "_vocab_due_frame", None)
+        if frame is None or not self._vocab_alive():
+            return
+        for child in frame.winfo_children():
+            child.destroy()
+        try:
+            due = due_words(self._vocab_db)
+        except Exception:
+            due = []
+        if not due:
+            tk.Label(frame, text=t("今天没有到期的复习词"),
+                     font=_FONT_SMALL, bg=C_BG, fg=C_TEXT2).pack(anchor="w")
+            return
+        tk.Label(frame, text=t("今日待复习 {count} 个", count=len(due)),
+                 font=_FONT_H2, bg=C_BG, fg=C_TEXT).pack(anchor="w",
+                                                         pady=(0, 4))
+        for entry in due[:20]:
+            row = tk.Frame(frame, bg=C_CARD, highlightbackground=C_BORDER,
+                           highlightthickness=1)
+            row.pack(fill=tk.X, pady=2)
+            tk.Label(row, text=entry.word, font=_FONT, bg=C_CARD,
+                     fg=C_ACCENT).pack(side=tk.LEFT, padx=(10, 4))
+            meaning = entry.definition_zh or ""
+            tk.Label(row, text=meaning, font=_FONT_SMALL, bg=C_CARD,
+                     fg=C_TEXT2).pack(side=tk.LEFT, padx=(0, 8))
+            for quality, label in (("know", t("认识")),
+                                   ("vague", t("模糊")),
+                                   ("forgot", t("忘记"))):
+                PillButton(row, text=label, kind="ghost", width=64, height=26,
+                           font=_FONT_SMALL, bg=C_CARD,
+                           command=lambda eid=entry.id, q=quality:
+                           self._vocab_review(eid, q)).pack(side=tk.RIGHT,
+                                                            padx=4, pady=4)
+
+    def _vocab_review(self, word_id: int, quality: str) -> None:
+        """回写复习结果并刷新待复习区与角标。"""
+        try:
+            update_review(self._vocab_db, word_id, quality)
+        except Exception as exc:
+            if self._vocab_alive():
+                self._vocab_status_var.set(t("复习更新失败：{exc}", exc=exc))
+            return
+        self._render_vocab_due()
+        self._refresh_vocab_badges()
+
+    def _refresh_vocab_badges(self) -> None:
+        """设置页 / 对话页的生词本按钮显示待复习数量角标。"""
+        try:
+            n = len(due_words(data_file("vocab.db")))
+        except Exception:
+            n = 0
+        label = t("📚 生词本") + (f"（{n}）" if n else "")
+        for attr in ("_vocab_btn", "_chat_vocab_btn"):
+            btn = getattr(self, attr, None)
+            if btn is not None:
+                try:
+                    btn.set_text(label)
+                except Exception:
+                    pass
+
+    # -- 对话中一键收藏（选中文字 → 右键查询收藏） --------------------
+    def _on_chat_right_click(self, event) -> None:
+        try:
+            sel = self.chat.get("sel.first", "sel.last").strip()
+        except tk.TclError:
+            sel = ""
+        if not sel:
+            return
+        if len(sel) > 60:
+            sel = sel[:60]
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label=t("🔍 查询并收藏「{text}」", text=sel),
+                         command=lambda: self._collect_word(sel))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _collect_word(self, text: str) -> None:
+        text = (text or "").strip()
+        if not text or self.busy:
+            return
+        self.busy = True
+        self._set_status(t("正在查询「{word}」…（需联网 / 通义 Key）", word=text))
+        self._run_worker(self._collect_word_worker, text)
+
+    def _collect_word_worker(self, text: str) -> None:
+        try:
+            client = self._build_llm()
+            entry = VocabGenerator(client).generate(text)
+            save_word(data_file("vocab.db"), entry)
+        except Exception as exc:
+            self._ui(self._collect_word_failed, exc)
+            return
+        self._ui(self._collect_word_done, entry.word)
+
+    def _collect_word_failed(self, exc) -> None:
+        self.busy = False
+        self._set_status(t("查询失败：{exc}", exc=exc))
+
+    def _collect_word_done(self, word: str) -> None:
+        self.busy = False
+        self._set_status(t("已收藏「{word}」", word=word))
+        _toast(self.root, t("已收藏「{word}」", word=word))
+        self._refresh_vocab_badges()
+
     def _render_vocab_list(self) -> None:
         if not self._vocab_alive():
             return
@@ -1900,12 +2633,12 @@ class SpokenApp:
             entries = list_words(
                 self._vocab_db, sort=self._vocab_sort_var.get(),
                 search=self._vocab_search_var.get().strip())
-            self._vocab_count_var.set(f"共 {len(entries)} 个生词")
+            self._vocab_count_var.set(t("共 {count} 个生词", count=len(entries)))
             if not entries:
                 tk.Label(
                     self._vocab_inner,
-                    text="还没有生词。在上方输入单词/短语，点击「查询并收藏」即可添加；"
-                         "离线也能查看已收藏的词条。",
+                    text=t("还没有生词。在上方输入单词/短语，点击「查询并收藏」即可添加；"
+                           "离线也能查看已收藏的词条。"),
                     bg=C_BG, fg=C_TEXT2, font=_FONT, wraplength=620,
                     justify="left", padx=6, pady=24).pack(anchor="w")
                 return
@@ -1934,7 +2667,7 @@ class SpokenApp:
         tk.Label(head, text=sub, font=_FONT, bg=C_CARD, fg=C_TEXT2
                  ).pack(side=tk.LEFT, padx=(10, 0))
         del_btn = PillButton(
-            head, text="🗑 删除", command=lambda eid=entry.id:
+            head, text=t("🗑 删除"), command=lambda eid=entry.id:
             self._delete_vocab(eid), kind="ghost", width=80, height=28,
             bg=C_CARD)
         del_btn.pack(side=tk.RIGHT)
@@ -1944,16 +2677,17 @@ class SpokenApp:
             body = "\n".join(
                 f"• {d.word}  [{d.pos}]  {d.definition_zh}"
                 for d in entry.derivations)
-            self._vocab_section(card, "词形变换", body)
+            self._vocab_section(card, t("词形变换"), body)
 
         # 近义 / 同词性对比
         for g in entry.contrast:
             lines = []
             for it in g.items:
                 lines.append(f"【{it.word}】（{g.pos}）")
-                lines.append(f"    侧重：{it.focus}")
-                lines.append(f"    语体：{it.register}　场景：{it.scene}")
-                lines.append(f"    例：{it.example}")
+                lines.append("    " + t("侧重：{focus}", focus=it.focus))
+                lines.append("    " + t("语体：{register}　场景：{scene}",
+                                          register=it.register, scene=it.scene))
+                lines.append("    " + t("例：{example}", example=it.example))
             self._vocab_section(card, f"近义对比（{g.pos}）", "\n".join(lines))
 
         # 短语搭配
@@ -1961,9 +2695,9 @@ class SpokenApp:
             lines = []
             for p in entry.phrases:
                 lines.append(f"【{p.phrase}】{p.meaning_zh}")
-                lines.append(f"    搭配：{p.structure}")
-                lines.append(f"    例：{p.example}")
-            self._vocab_section(card, "短语搭配", "\n".join(lines))
+            lines.append("    " + t("搭配：{structure}", structure=p.structure))
+            lines.append("    " + t("例：{example}", example=p.example))
+            self._vocab_section(card, t("短语搭配"), "\n".join(lines))
 
     def _vocab_section(self, parent, title: str, body: str) -> None:
         sec = tk.Frame(parent, bg=C_CARD)
@@ -1986,12 +2720,12 @@ class SpokenApp:
     def _vocab_lookup(self) -> None:
         word = self._vocab_lookup_var.get().strip()
         if not word:
-            self._vocab_status_var.set("请输入要查询的单词或短语")
+            self._vocab_status_var.set(t("请输入要查询的单词或短语"))
             return
         if self.busy:
             return
         self._vocab_status_var.set(
-            f"正在查询「{word}」…（需联网 / 通义 Key）")
+            t("正在查询「{word}」…（需联网 / 通义 Key）", word=word))
         self._run_worker(self._vocab_lookup_worker, word)
 
     def _vocab_lookup_worker(self, word: str) -> None:
@@ -2001,13 +2735,13 @@ class SpokenApp:
             entry = gen.generate(word)
         except Exception as exc:
             if self._vocab_alive():
-                self._vocab_status_var.set(f"查询失败：{exc}")
+                self._vocab_status_var.set(t("查询失败：{exc}", exc=exc))
             return
         try:
             save_word(self._vocab_db, entry)
         except Exception as exc:
             if self._vocab_alive():
-                self._vocab_status_var.set(f"保存失败：{exc}")
+                self._vocab_status_var.set(t("保存失败：{exc}", exc=exc))
             return
         self._ui(self._vocab_lookup_done, entry)
 
@@ -2015,9 +2749,11 @@ class SpokenApp:
         if not self._vocab_alive():
             return
         self._vocab_lookup_var.set("")
-        self._vocab_status_var.set(f"已收藏「{entry.word}」")
+        self._vocab_status_var.set(t("已收藏「{word}」", word=entry.word))
         self._vocab_sort_var.set("time")
         self._render_vocab_list()
+        self._render_vocab_due()
+        self._refresh_vocab_badges()
 
     # ------------------------------------------------------------------
     # 关闭
@@ -2030,7 +2766,17 @@ class SpokenApp:
                 pass
         self._orb_stop()
         self.speaker.stop()
+        self._save_window_geometry()
         self.root.destroy()
+
+    def _save_window_geometry(self) -> None:
+        """关闭时记住窗口位置与大小（写入 config 的 ui.window_geometry）。"""
+        try:
+            geo = self.root.geometry()
+            if geo and geo != "1x1+0+0":
+                self._save_config_patch({"ui": {"window_geometry": geo}})
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # GitHub 自动更新检查（启动后静默、非阻塞、失败跳过）
@@ -2052,28 +2798,84 @@ class SpokenApp:
 
     def _show_update_banner(self, info: dict) -> None:
         dialog = tk.Toplevel(self.root)
-        dialog.title("发现新版本")
-        dialog.geometry("400x170")
+        dialog.title(t("发现新版本"))
+        dialog.geometry("440x210")
         dialog.transient(self.root)
         dialog.configure(bg=C_BG)
         dialog.resizable(False, False)
-        tk.Label(dialog, text="🎉 发现新版本可用",
+        tk.Label(dialog, text=t("🎉 发现新版本可用"),
                  font=_FONT_TITLE, bg=C_BG, fg=C_ACCENT).pack(
                      anchor="w", padx=20, pady=(16, 4))
-        tk.Label(dialog, text=f"当前 {__version__} → 最新 {info['tag']}",
+        tk.Label(dialog, text=t("当前 {current} → 最新 {latest}",
+                                current=__version__, latest=info["tag"]),
                  font=_FONT, bg=C_BG, fg=C_TEXT).pack(
-                     anchor="w", padx=20, pady=(0, 12))
+                     anchor="w", padx=20, pady=(0, 8))
+        status_var = tk.StringVar(value="")
+        tk.Label(dialog, textvariable=status_var, font=_FONT_SMALL, bg=C_BG,
+                 fg=C_TEXT2, wraplength=400, justify="left").pack(
+                     anchor="w", padx=20, pady=(0, 8))
+
         row = tk.Frame(dialog, bg=C_BG)
         row.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=16)
+        dl_btn = PillButton(row, text=t("下载并更新"), kind="primary",
+                            width=130, height=36)
+        dl_btn.pack(side=tk.RIGHT)
+        PillButton(row, text=t("稍后"), command=dialog.destroy, kind="ghost",
+                   width=100, height=36).pack(side=tk.RIGHT, padx=(0, 10))
 
-        def _go() -> None:
+        def _go_download() -> None:
+            """后台下载 → 准备更新批处理 → 退出程序并执行替换。"""
+            dl_btn.set_enabled(False)
+            status_var.set(t("正在下载更新…"))
+            self._run_worker(self._update_download_worker, dialog, status_var,
+                             dl_btn)
+
+        def _open_page() -> None:
             webbrowser.open(info["url"])
             dialog.destroy()
 
-        PillButton(row, text="前往下载", command=_go, kind="primary",
-                   width=130, height=36).pack(side=tk.RIGHT)
-        PillButton(row, text="稍后", command=dialog.destroy, kind="ghost",
-                   width=100, height=36).pack(side=tk.RIGHT, padx=(0, 10))
+        dl_btn.command = _go_download
+        if not info.get("asset_url") or not is_frozen():
+            # 源码态 / 无附件：只能手动前往下载页
+            dl_btn.set_enabled(False)
+            status_var.set(t("请前往下载页手动获取新版本"))
+        # 保留一个可达的手动下载入口（右键级别不放 UI，改用标题提示）
+        dialog.bind("<Double-Button-1>", lambda _e: _open_page())
+
+    def _update_download_worker(self, dialog, status_var, dl_btn) -> None:
+        try:
+            def _progress(done: int, total: int) -> None:
+                pct = int(done * 100 / total) if total else 0
+                self._ui(status_var.set,
+                         t("正在下载更新… {pct}%", pct=pct))
+
+            script = updater.prepare_update(progress_cb=_progress)
+        except Exception as exc:
+            self._ui(self._update_download_failed, dialog, status_var, dl_btn,
+                     exc)
+            return
+        self._ui(self._update_download_done, dialog, status_var, script)
+
+    def _update_download_failed(self, dialog, status_var, dl_btn, exc) -> None:
+        if not dialog.winfo_exists():
+            return
+        dl_btn.set_enabled(True)
+        status_var.set(t("更新失败：{exc}（可双击本窗口前往下载页手动更新）",
+                         exc=exc))
+
+    def _update_download_done(self, dialog, status_var, script) -> None:
+        if not dialog.winfo_exists():
+            return
+        status_var.set(t("更新已就绪，应用后程序将自动重启"))
+        # 启动批处理（等本进程退出后替换并重启），然后退出程序
+        try:
+            import subprocess
+            subprocess.Popen(["cmd", "/c", str(script)],
+                             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+        except Exception as exc:
+            status_var.set(t("更新失败：{exc}", exc=exc))
+            return
+        self.root.after(800, self.root.destroy)
 
 
 def main() -> None:
