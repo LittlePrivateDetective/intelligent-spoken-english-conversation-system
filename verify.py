@@ -28,6 +28,14 @@ from spoken.prompts import build_system_prompt
 from spoken.report import render_report_markdown, save_report
 from spoken.scenarios import DIFFICULTIES, DIFFICULTY_ORDER, SCENARIOS, SCENARIO_ORDER
 
+# CI 的 Windows runner 默认控制台编码是 cp1252（英文系统），中文输出会
+# 触发 UnicodeEncodeError；强制 UTF-8 输出（本地中文 Windows 无此问题）。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 # 每个场景的测试台词：含错误句、卡壳句、正确句、流畅信号句、告别句
 FLAWED_INPUT = {
     "daily_smalltalk": "Hello, I am agree with you, and I very like this party.",

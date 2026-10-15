@@ -8,6 +8,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# CI runner（英文 Windows）默认控制台为 cp1252，中文输出需强制 UTF-8，
+# 否则 quick_validate/verify 的 print 会 UnicodeEncodeError。
+env:
+  PYTHONIOENCODING: utf-8
+
 jobs:
   # 测试：每次 push / PR 自动跑两套离线验证（MockLLM，无需 API Key）
   test:

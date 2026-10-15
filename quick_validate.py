@@ -32,6 +32,14 @@ from spoken.vocab_gen import VocabGenerator
 from spoken.vocab_store import count_words, delete_word, list_words, save_word
 from spoken import custom_scenarios
 
+# CI 的 Windows runner 默认控制台编码是 cp1252（英文系统），中文断言名
+# 会触发 UnicodeEncodeError；强制 UTF-8 输出（本地中文 Windows 无此问题）。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 PASS, FAIL = 0, 0
 RESULTS: list[tuple[str, bool, str]] = []
 
