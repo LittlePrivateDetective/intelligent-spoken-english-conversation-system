@@ -40,7 +40,7 @@ try:
 except Exception:
     pass
 
-PASS, FAIL = 0, 0
+PASS, FAIL, SKIP = 0, 0, 0
 RESULTS: list[tuple[str, bool, str]] = []
 
 
@@ -57,6 +57,16 @@ def check(name: str, ok: bool, detail: str = "") -> bool:
         line += f" —— {detail}"
     print(line)
     return ok
+
+
+def skip(name: str, reason: str = "") -> None:
+    """可选依赖缺失等情况下跳过某项检查，不计入失败。"""
+    global SKIP
+    SKIP += 1
+    line = f"⏭️  {name}"
+    if reason:
+        line += f"（{reason}）"
+    print(line)
 
 
 # 典型错误句 -> 期望在 corrected 中出现的片段
@@ -337,6 +347,10 @@ def test_transcribe_ndarray_path() -> None:
     section("7. 识别路径（波形数组直传，绕开 PyAV）")
     try:
         import numpy as np
+    except ModuleNotFoundError:
+        skip("识别路径（波形数组直传）", "numpy 未安装（核心依赖不含，可选）")
+        return
+    try:
         from spoken.asr import Transcriber
 
         class _Seg:
@@ -564,7 +578,10 @@ def test_gui() -> None:
 # ----------------------------------------------------------------------
 def test_new_features() -> None:
     section("10. 新功能模块：TTS / ASR / 云端TTS / 评分 / 历史 / 配置")
-    import numpy as np
+    try:
+        import numpy as np
+    except ModuleNotFoundError:
+        np = None
 
     # TTS：默认音量 1.0，list_voices 不抛异常
     from spoken.tts import Speaker, list_voices
@@ -577,15 +594,18 @@ def test_new_features() -> None:
         check("list_voices 返回列表", False, str(exc))
 
     # ASR 归一化：提升轻音 RMS 且对超幅限幅
-    quiet = np.zeros(16000, dtype=np.float32)
-    quiet[1000:2000] = 0.01
-    norm = MicRecorder.normalize_audio(quiet)
-    check("归一化后 RMS 提升",
-          float(np.sqrt((norm ** 2).mean())) > float(np.sqrt((quiet ** 2).mean())))
-    loud = np.full(16000, 5.0, dtype=np.float32)
-    norm2 = MicRecorder.normalize_audio(loud)
-    check("归一化限幅到 [-1,1]",
-          float(norm2.max()) <= 1.0 and float(norm2.min()) >= -1.0)
+    if np is not None:
+        quiet = np.zeros(16000, dtype=np.float32)
+        quiet[1000:2000] = 0.01
+        norm = MicRecorder.normalize_audio(quiet)
+        check("归一化后 RMS 提升",
+              float(np.sqrt((norm ** 2).mean())) > float(np.sqrt((quiet ** 2).mean())))
+        loud = np.full(16000, 5.0, dtype=np.float32)
+        norm2 = MicRecorder.normalize_audio(loud)
+        check("归一化限幅到 [-1,1]",
+              float(norm2.max()) <= 1.0 and float(norm2.min()) >= -1.0)
+    else:
+        skip("ASR 音频归一化校验", "numpy 未安装（核心依赖不含，可选）")
 
     # 云端 TTS：无 key 应直接报错（不联网）
     try:
@@ -1354,7 +1374,7 @@ def main() -> int:
 
     total = PASS + FAIL
     print(f"\n{'═' * 56}")
-    print(f"结果：{PASS}/{total} 项检查通过")
+    print(f"结果：{PASS}/{total} 项检查通过" + (f"，{SKIP} 项跳过" if SKIP else ""))
     if FAIL:
         print("❌ 存在失败项：")
         for name, ok, detail in RESULTS:

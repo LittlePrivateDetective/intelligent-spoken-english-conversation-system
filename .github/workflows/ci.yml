@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: 安装核心依赖
-        run: pip install -e .
+        run: pip install -e . numpy
       - name: quick_validate（196+ 项离线检查）
         run: python quick_validate.py
       - name: verify（771 项回归）
