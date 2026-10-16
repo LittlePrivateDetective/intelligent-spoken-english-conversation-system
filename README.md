@@ -59,7 +59,7 @@ python -m venv .venv
 如果你不想安装 Python 与依赖，可以直接下载打包好的单文件 exe：
 
 1. 打开 [Releases 页面](https://github.com/LittlePrivateDetective/intelligent-spoken-english-conversation-system/releases)
-2. 在最新版本下找到 `spoken_vX.X.X_win64.zip`（完整版，约 100MB，含本地语音），
+2. 在最新版本下找到 `spoken_vX.X.X_win64.zip`（完整版，约 108MB，含本地语音），
    下载解压到本地任意目录（如桌面）
 3. **双击 `spoken.exe` 即可运行**，无需安装任何环境
 4. 首次运行会在 `%APPDATA%\spoken` 下创建配置文件 `config.yaml` 与数据库；
@@ -67,7 +67,7 @@ python -m venv .venv
 5. 发现新版本时程序会弹出提示，点「下载并更新」即可自动下载并重启安装
 
 > 网速慢？Release 页面同时提供**纯文字精简版** `spoken_vX.X.X_win64_lite.zip`
-> （约 16MB，无语音识别/合成，自动降级为文字对话模式），也可在 Actions 页面的
+> （约 24MB，无语音识别/合成，自动降级为文字对话模式），也可在 Actions 页面的
 > Artifact 里下载。
 >
 > 想自己打包？在项目根目录双击 `build_exe.bat` 即可（`build_exe.bat lite` 打精简版，
