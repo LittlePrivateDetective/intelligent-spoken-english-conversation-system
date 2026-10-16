@@ -43,7 +43,10 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # upx=False：UPX 压缩的 bootloader 易被杀毒软件误报为木马
+    # （用户下载后不敢运行），且 onefile 首次启动需解压反而更慢。
+    # 完整版体积主要来自 faster-whisper/ctranslate2 依赖，压缩收益有限。
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,

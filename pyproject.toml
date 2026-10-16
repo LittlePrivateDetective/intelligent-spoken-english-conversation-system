@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spoken"
-version = "1.1.1"
+version = "1.1.2"
 description = "智能英语口语教练：Windows 桌面程序，选择场景与难度，AI 语音对话并实时纠错"
 readme = "README.md"
 requires-python = ">=3.10"

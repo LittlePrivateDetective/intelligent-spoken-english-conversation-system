@@ -24,7 +24,7 @@ jobs:
           python-version: "3.12"
       - name: 安装核心依赖
         run: pip install -e . numpy
-      - name: quick_validate（196+ 项离线检查）
+      - name: quick_validate（280+ 项离线检查）
         run: python quick_validate.py
       - name: verify（771 项回归）
         run: python verify.py
@@ -63,14 +63,24 @@ jobs:
         run: pip install -e ".[voice]" pyinstaller
       - name: 打包完整版
         run: pyinstaller --noconfirm --clean spoken.spec
+      # 关键：完整版打包后必须立即重命名保存。
+      # v1.1.1 曾因先打精简版再统一重命名，完整版 dist/spoken.exe 被
+      # 精简版覆盖，导致「完整版」zip 实际是精简版（两 zip 体积仅差 39 字节）。
+      - name: 保存完整版产物
+        shell: pwsh
+        run: Rename-Item -Path dist/spoken.exe -NewName "spoken_full.exe"
       - name: 打包精简版（lite）
         run: pyinstaller --noconfirm --clean spoken_lite.spec
       - name: 重命名并压缩（完整版 + 精简版）
         shell: pwsh
         run: |
-          Rename-Item -Path dist/spoken.exe -NewName "spoken_full.exe"
-          pyinstaller --noconfirm --clean spoken_lite.spec
           Rename-Item -Path dist/spoken.exe -NewName "spoken_lite.exe"
+          # 体积断言：完整版含 faster-whisper 等语音依赖，必须显著大于精简版，
+          # 否则说明打包顺序再次退化（完整版被覆盖），直接失败终止发布。
+          $full = (Get-Item dist/spoken_full.exe).Length
+          $lite = (Get-Item dist/spoken_lite.exe).Length
+          Write-Host "完整版: $full bytes / 精简版: $lite bytes"
+          if ($lite * 2 -gt $full) { throw "完整版($full bytes)未显著大于精简版($lite bytes)，打包顺序可能存在 bug" }
           Compress-Archive -Path dist/spoken_full.exe -DestinationPath "dist/spoken_${{ github.ref_name }}_win64.zip" -Force
           Compress-Archive -Path dist/spoken_lite.exe -DestinationPath "dist/spoken_${{ github.ref_name }}_win64_lite.zip" -Force
       - name: 上传到 Release

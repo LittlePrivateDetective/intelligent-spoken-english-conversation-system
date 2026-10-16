@@ -8,6 +8,8 @@
   4. 同一错误不重复输出
   5. 总结结构完整（错误总数 / 分类统计 / 没用到的词汇 / 改进点清单）
   6. GUI 窗口能正常构建（无显示环境时自动跳过并提示）
+  7. 语音设置 UX（关闭=应用 / 取消=放弃 / 试听预览）
+  8. 版本号一致性、CI 打包顺序与 upx 配置防回归
 
 用法：python quick_validate.py
 """
@@ -905,7 +907,7 @@ def test_i18n_theme() -> None:
 # 16. 语音设置 UX：X 关闭=应用 / 取消=放弃 / 场景图标单色化
 # ----------------------------------------------------------------------
 def test_voice_settings_ux() -> None:
-    section("16. 语音设置 UX：关闭窗口=应用 / 取消=放弃 / 图标单色化")
+    section("16. 语音设置 UX：关闭窗口=应用 / 取消=放弃 / 试听预览 / 图标单色化")
     try:
         import os
         import tempfile
@@ -1049,6 +1051,40 @@ def test_voice_settings_ux() -> None:
             close_x(dlg)
             check("无变化时 X 关闭不写盘",
                   os.path.getmtime("config.yaml") == mtime)
+
+            # 5) 「试听」按钮：即时预览；无声环境下给出提示且不崩溃
+            app._open_voice_settings()
+            dlg = dialog()
+            dlg.withdraw()
+            btns = pill(dlg, "试听")
+            check("对话框提供「试听」按钮", len(btns) == 1)
+            if btns:
+                btns[0].command()
+                hints = [w for w in walk(dlg)
+                         if isinstance(w, tk.Label)
+                         and w.cget("text").startswith("当前环境无可用语音引擎")]
+                check("试听在无语音引擎时给出提示（不崩溃）",
+                      len(hints) == 1)
+            dlg.destroy()
+
+            # 6) _make_cloud_synth 支持临时覆盖参数（试听未保存的界面选择）
+            app.cfg.cloud_tts = {"enabled": True, "api_key": "sk-test",
+                                 "accent": "en-US"}
+            check("云端试听：显式禁用时返回 None",
+                  app._make_cloud_synth(enabled=False, accent="en-GB")
+                  is None)
+            check("云端试听：启用时返回合成函数",
+                  callable(app._make_cloud_synth(enabled=True,
+                                                 accent="en-GB")))
+            check("云端试听：自定义音色时返回合成函数",
+                  callable(app._make_cloud_synth(enabled=True, accent="en-GB",
+                                                 custom_voice="my-voice")))
+            check("云端试听：speed 覆盖被接受",
+                  callable(app._make_cloud_synth(enabled=True, accent="en-GB",
+                                                 speed="fast")))
+            # 覆盖参数不得污染主配置（试听只是试听）
+            check("试听覆盖不改变主配置口音",
+                  (app.cfg.cloud_tts or {}).get("accent") == "en-US")
 
             root.destroy()
         finally:
@@ -1303,6 +1339,41 @@ def test_ci_and_updater() -> None:
               encoding="utf-8"))
     bat_txt = (root / "build_exe.bat").read_text(encoding="utf-8")
     check("build_exe.bat 支持 lite 参数", "lite" in bat_txt)
+
+    # -- 版本号一致性：__init__.py 与 pyproject.toml 必须相同 --
+    import re
+    init_txt = (root / "spoken" / "__init__.py").read_text(encoding="utf-8")
+    pyproject_txt = (root / "pyproject.toml").read_text(encoding="utf-8")
+    m_init = re.search(r'__version__\s*=\s*"([^"]+)"', init_txt)
+    m_py = re.search(r'^version\s*=\s*"([^"]+)"', pyproject_txt, re.M)
+    check("能从 __init__.py 解析版本号", m_init is not None)
+    check("能从 pyproject.toml 解析版本号", m_py is not None)
+    if m_init and m_py:
+        check(f"版本号一致（{m_init.group(1)}）",
+              m_init.group(1) == m_py.group(1),
+              f"__init__.py={m_init.group(1)} vs pyproject={m_py.group(1)}")
+
+    # -- CI 打包顺序防回归（v1.1.1 事故复盘） --
+    # v1.1.1 曾因「先打精简版再统一重命名」导致完整版 exe 被覆盖，
+    # 发布出去的两个 zip 体积仅差 39 字节。必须：完整版先重命名保存，
+    # 再打精简版，且有体积断言兜底。
+    # 注意：build-lite job 里也有 lite 打包命令，只截取 build-full 片段判断。
+    ci_txt = ci.read_text(encoding="utf-8")
+    full_job = ci_txt[ci_txt.find("build-full:"):]
+    full_pos = full_job.find("pyinstaller --noconfirm --clean spoken.spec")
+    save_pos = full_job.find('NewName "spoken_full.exe"')
+    lite_pos = full_job.find("pyinstaller --noconfirm --clean spoken_lite.spec")
+    check("CI 打包顺序：完整版先重命名保存，再打精简版",
+          -1 < full_pos < save_pos < lite_pos)
+    check("CI 含体积断言（完整版须显著大于精简版）",
+          "$lite * 2 -gt $full" in ci_txt)
+
+    # -- upx 必须关闭：UPX 压缩 bootloader 易被杀毒软件误报 --
+    check("完整版打包规格关闭 upx（防杀毒误报）",
+          "upx=True" not in (root / "spoken.spec").read_text(
+              encoding="utf-8"))
+    check("精简版打包规格关闭 upx（防杀毒误报）",
+          "upx=True" not in lite_spec.read_text(encoding="utf-8"))
 
 
 def test_updater() -> None:

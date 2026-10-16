@@ -533,17 +533,29 @@ class SpokenApp:
         self._update_checked = False
         self.root.after(2500, self._check_update)
 
-    def _make_cloud_synth(self):
+    def _make_cloud_synth(self, enabled=None, accent=None, custom_voice=None,
+                          speed=None):
         """按当前配置构造云端 TTS 合成函数；未启用或无 key 时返回 None。
 
         音色/语言由 spoken.accents.resolve_cloud_voice 解析：
         优先自定义音色 id，其次按选定口音取官方音色。
+        enabled/accent/custom_voice/speed 可传临时值（语音设置「试听」
+        按钮需要在未保存配置的情况下按界面当前选择试听），默认读 self.cfg。
         """
         cloud_cfg = self.cfg.cloud_tts or {}
-        if not (cloud_cfg.get("enabled") and cloud_cfg.get("api_key")):
+        if enabled is None:
+            enabled = bool(cloud_cfg.get("enabled"))
+        if accent is None:
+            accent = cloud_cfg.get("accent")
+        if custom_voice is None:
+            custom_voice = cloud_cfg.get("custom_voice")
+        if speed is None:
+            speed = self.cfg.tts_speed or "medium"
+        if not (enabled and cloud_cfg.get("api_key")):
             return None
-        voice, language_hint = accents.resolve_cloud_voice(cloud_cfg)
-        speed = self.cfg.tts_speed or "medium"
+        voice, language_hint = accents.resolve_cloud_voice(
+            {"enabled": True, "accent": accent,
+             "custom_voice": custom_voice})
         mult = self._speed_mult.get(speed, 1.0)
         volume = max(0, min(100, int(self.cfg.tts_volume)))
         api_key = cloud_cfg.get("api_key", "")
@@ -2180,17 +2192,66 @@ class SpokenApp:
             self._apply_voice_settings(
                 new_voice, speed_var.get(), vol_var.get(),
                 cloud_on.get(), accent_val, custom)
+            _stop_preview()
             dialog.destroy()
+
+        # 试听：按当前界面选择（尚未保存）即时播放一句英文，
+        # 验证发音人 / 语速 / 音量 / 口音是否符合预期
+        preview_speaker: Speaker | None = None
+
+        def _stop_preview() -> None:
+            nonlocal preview_speaker
+            if preview_speaker is not None:
+                preview_speaker.stop()
+                preview_speaker = None
+
+        def _preview() -> None:
+            nonlocal preview_speaker
+            selected = voice_var.get()
+            idx = voice_names.index(selected) if selected in voice_names else 0
+            speed = speed_var.get()
+            volume = int(vol_var.get())
+            # 停掉主 Speaker 与上一次试听，避免两个声音重叠
+            self.speaker.stop()
+            _stop_preview()
+            try:
+                s = Speaker(
+                    rate=self._speed_rate.get(speed, 175),
+                    voice=voice_ids[idx],
+                    volume=max(0.0, min(1.0, volume / 100.0)),
+                    on_error=self._on_tts_error,
+                    cloud_synth=self._make_cloud_synth(
+                        enabled=bool(cloud_on.get()),
+                        accent=accent_var.get(),
+                        custom_voice=custom_var.get().strip(),
+                        speed=speed))
+                preview_speaker = s
+                if s.available:
+                    s.speak("Hello! This is a preview of your voice "
+                            "settings. Let's practice spoken English.")
+                    hint.configure(text=t("正在试听当前设置…"))
+                else:
+                    hint.configure(text=t(
+                        "当前环境无可用语音引擎（未安装 pyttsx3，且云端 TTS 未配置）"))
+            except Exception as exc:
+                hint.configure(text=t("试听失败：{exc}", exc=exc))
 
         # 关闭窗口（右上角 X）= 应用当前设置，与「保存」等效；
         # 想放弃改动请点「取消」。避免"调完设置随手关窗却丢了修改"。
         dialog.protocol("WM_DELETE_WINDOW", _save)
         btn_row = tk.Frame(dialog, bg=C_BG)
         btn_row.pack(side=tk.BOTTOM, pady=(6, 12))
+        hint = tk.Label(dialog, text="", bg=C_BG, fg=C_TEXT2,
+                        font=_FONT_SMALL)
+        hint.pack(side=tk.BOTTOM, pady=(2, 0))
         tk.Label(dialog, text=t("关闭窗口将自动应用当前设置"),
                  bg=C_BG, fg=C_TEXT3, font=_FONT_SMALL).pack(
                      side=tk.BOTTOM, pady=(2, 0))
-        PillButton(btn_row, text=t("取消"), command=dialog.destroy,
+        PillButton(btn_row, text=t("试听"), command=_preview,
+                   kind="secondary", width=110, height=36).pack(
+                       side=tk.LEFT, padx=(0, 12))
+        PillButton(btn_row, text=t("取消"),
+                   command=lambda: (_stop_preview(), dialog.destroy()),
                    kind="ghost", width=110, height=36).pack(
                        side=tk.LEFT, padx=(0, 12))
         PillButton(btn_row, text=t("保存"), command=_save,

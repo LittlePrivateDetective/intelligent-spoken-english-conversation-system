@@ -153,6 +153,11 @@ _EN: dict[str, str] = {
     "中": "Normal",
     "快": "Fast",
     "音量": "Volume",
+    "试听": "Preview",
+    "正在试听当前设置…": "Previewing current settings…",
+    "当前环境无可用语音引擎（未安装 pyttsx3，且云端 TTS 未配置）":
+        "No voice engine available (pyttsx3 not installed and cloud TTS not configured)",
+    "试听失败：{exc}": "Preview failed: {exc}",
     "关闭窗口将自动应用当前设置": "Closing this window applies your changes",
     "云端 TTS（CosyVoice，可选）": "Cloud TTS (CosyVoice, optional)",
     "启用云端 TTS（音色更清晰）": "Enable cloud TTS (clearer voice)",
