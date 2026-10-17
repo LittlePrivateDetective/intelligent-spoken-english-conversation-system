@@ -147,13 +147,18 @@ copy config.example.yaml config.yaml
 
 | 能力 | 技术 | 说明 |
 | --- | --- | --- |
-| 语音识别 | faster-whisper | 本地离线运行，保护隐私；模型大小可在 `config.yaml` 的 `voice.asr_model` 调整（tiny/base/small/medium，默认 base） |
+| 语音识别 | faster-whisper | 本地离线运行，保护隐私；模型大小可在 `config.yaml` 的 `voice.asr_model` 调整（tiny/base/small/medium，默认 base）。**对带口音的英语口语，推荐改用 `small`（约 460MB）显著降低错误率**；识别时自动携带场景热词与英文语境偏置 |
 | 语音合成 | pyttsx3 | 调用 Windows 自带语音，离线可用；语速在 `voice.tts_rate` 调整 |
 | 云端语音合成 | DashScope CosyVoice | 可选；更清晰音色、多语种口音，需在 `config.yaml` 配置云端 TTS Key |
 | 发音评分 | 阿里云语音评测 | 可选；真实声学打分，需单独开通智能语音交互并配置 AppKey |
 | 图形界面 | tkinter | Python 官方 GUI 库，无额外依赖 |
 
 纠错说明：**规则引擎**负责常见中式英语错误（主谓一致、时态、介词、固定搭配等 30+ 条规则，确定性强、干净句子零误报）；**AI 通道**补充规则之外的错误，且同样经过“原话必须真实出现过”的校验。
+
+**效果调优建议**：
+
+- **识别不准？** ① `config.yaml` 的 `voice.asr_model` 改为 `small`（对非母语者口音改善最明显）；② 说话时靠近麦克风、减少环境噪声；③ 程序已自动携带场景热词与英文语境偏置，短句识别更稳
+- **AI 英语不够地道？** ① 系统提示已内置“母语者口语风格”规则（缩略形式、短语动词、禁翻译腔）与风格示例；② 模型本身影响很大——qwen-plus 英语尚可但非顶尖，可换 `qwen-max`（同 Key）或 `deepseek-chat` 等英语更强的模型，只改 `config.yaml` 的 `llm.model` 即可，无需改代码
 
 ## 验证
 

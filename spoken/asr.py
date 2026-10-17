@@ -225,19 +225,28 @@ class Transcriber:
                 raise ASRDownloadError(exc, self.model_size) from exc
             raise
 
-    def transcribe(self, audio: "np.ndarray", hotwords: str | None = None) -> str:
+    def transcribe(self, audio: "np.ndarray", hotwords: str | None = None,
+                   initial_prompt: str | None = None) -> str:
         """识别音频波形（16kHz 单声道 float32），返回英文文本（可能为空串）。
 
         直接传波形数组而非文件路径：faster-whisper 对 ndarray 输入会跳过
         内部 av 解码，规避 PyAV 19 的 metadata_errors 兼容问题。
 
         hotwords：场景专有名词/热词（空格分隔），可显著提升生词识别准确率。
+        initial_prompt：给解码器的英文语境偏置（场景描述 + 可能出现的词），
+            能明显改善领域词汇与短句的识别；为空则不下发。
+        condition_on_previous_text=False：口语练习是短录音（一两句），
+            关闭跨段文本条件可避免 Whisper 在静音/含糊处自我重复、编造
+            幻觉文本（"Thanks for watching" 类经典幻觉）。
         """
         if self._model is None:
             self.load()
-        kwargs = dict(language=self.language, beam_size=5, vad_filter=True)
+        kwargs = dict(language=self.language, beam_size=5, vad_filter=True,
+                      condition_on_previous_text=False)
         if hotwords:
             kwargs["hotwords"] = hotwords
+        if initial_prompt:
+            kwargs["initial_prompt"] = initial_prompt
         segments, _info = self._model.transcribe(audio, **kwargs)
         text = " ".join(seg.text.strip() for seg in segments).strip()
         return text

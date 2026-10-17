@@ -175,6 +175,26 @@ def test_matrix() -> None:
 
 
 # ----------------------------------------------------------------------
+# 1b. 系统提示：母语者口语风格规则（v1.2.0 地道度升级）
+# ----------------------------------------------------------------------
+def test_prompt_style() -> None:
+    section("1b. 系统提示：口语风格规则 / 风格示例")
+    from spoken.prompts import SHADOW_SENTENCES_SYSTEM, build_system_prompt
+    p = build_system_prompt("daily_smalltalk", "intermediate")
+    for token in ("native speaker", "缩略形式", "短语动词", "翻译腔",
+                  "风格示例", "couldn't find"):
+        check(f"系统提示包含「{token}」", token in p)
+    # 风格规则不随反馈语言切换而丢失（en 模式只切纠错原因的语言）
+    p_en = build_system_prompt("daily_smalltalk", "intermediate",
+                               feedback_language="en")
+    check("英文反馈模式下风格规则仍然在", "缩略形式" in p_en)
+    # 场景关键字段不被破坏（verify.py 也有同类校验）
+    check("场景字段完整", "日常寒暄" in p)
+    check("跟读造句提示要求母语者口语",
+          "native speaker" in SHADOW_SENTENCES_SYSTEM)
+
+
+# ----------------------------------------------------------------------
 # 2. 纠错模块：典型错误命中
 # ----------------------------------------------------------------------
 def test_corrector_hits() -> None:
@@ -362,9 +382,11 @@ def test_transcribe_ndarray_path() -> None:
         class _FakeModel:
             def __init__(self) -> None:
                 self.received = None
+                self.kwargs = None
 
             def transcribe(self, audio, **kwargs):
                 self.received = audio
+                self.kwargs = kwargs
                 return [_Seg(" hello world ")], None
 
         t = Transcriber()
@@ -374,6 +396,18 @@ def test_transcribe_ndarray_path() -> None:
         check("transcribe 接受波形数组并返回识别文本", text == "hello world")
         check("传给模型的是 ndarray 而非文件路径",
               isinstance(t._model.received, np.ndarray))
+        # v1.2.0：短录音防幻觉 + 场景提示透传
+        check("condition_on_previous_text 默认关闭（防短录音幻觉）",
+              t._model.kwargs.get("condition_on_previous_text") is False)
+        check("无提示时不下发 hotwords / initial_prompt",
+              "hotwords" not in t._model.kwargs
+              and "initial_prompt" not in t._model.kwargs)
+        t.transcribe(waveform, hotwords="boarding pass",
+                     initial_prompt="An English conversation.")
+        check("hotwords / initial_prompt 正确透传给模型",
+              t._model.kwargs.get("hotwords") == "boarding pass"
+              and t._model.kwargs.get("initial_prompt")
+              == "An English conversation.")
     except Exception as exc:
         check("识别路径（波形数组直传）", False,
               f"{type(exc).__name__}: {exc}")
@@ -1086,6 +1120,12 @@ def test_voice_settings_ux() -> None:
             check("试听覆盖不改变主配置口音",
                   (app.cfg.cloud_tts or {}).get("accent") == "en-US")
 
+            # 7) ASR 提示：对话模式也传场景热词 + 语境偏置（v1.2.0 对齐跟读模式）
+            hw, ip = app._asr_hints()
+            check("_asr_hints 返回场景热词", bool(hw))
+            check("_asr_hints 返回 initial_prompt（英文语境偏置）",
+                  bool(ip) and "English conversation" in ip)
+
             root.destroy()
         finally:
             gui_mod.Speaker = real_speaker
@@ -1424,6 +1464,7 @@ def main() -> int:
     print(f"  语音合成 pyttsx3：{'可用' if tts_available() else '未安装'}")
 
     test_matrix()
+    test_prompt_style()
     test_corrector_hits()
     test_corrector_clean()
     test_no_repeat()

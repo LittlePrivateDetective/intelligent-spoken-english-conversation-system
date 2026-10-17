@@ -1806,6 +1806,26 @@ class SpokenApp:
             else:
                 self._run_worker(self._transcribe_worker)
 
+    def _asr_hints(self) -> tuple[str | None, str | None]:
+        """当前场景的 ASR 提示：(场景热词, initial_prompt)。
+
+        initial_prompt 让 Whisper 预先知道"这是一段关于某场景的英语口语"
+        并见到场景高频词，对领域词汇与短句识别改善明显（v1.2.0 新增；
+        此前对话模式未传任何提示，而跟读模式传了热词，已对齐）。
+        """
+        try:
+            sc_key = self._selected_keys()[0]
+            name_en = resolve_scenario(sc_key).get("name_en", "")
+        except Exception:
+            return None, None
+        hotwords = resolve_hotwords(sc_key) or None
+        parts = []
+        if name_en:
+            parts.append(f"An English conversation about {name_en}.")
+        if hotwords:
+            parts.append(f"Possible words: {hotwords}.")
+        return hotwords, (" ".join(parts) or None)
+
     def _transcribe_worker(self) -> None:
         text = ""
         try:
@@ -1815,7 +1835,9 @@ class SpokenApp:
             if not self.transcriber.loaded:
                 self._set_status(t("正在加载语音识别模型（首次需下载，约 150MB）…"))
                 self.transcriber.load()
-            text = self.transcriber.transcribe(audio)
+            hotwords, initial_prompt = self._asr_hints()
+            text = self.transcriber.transcribe(
+                audio, hotwords=hotwords, initial_prompt=initial_prompt)
         except Exception as exc:
             self._ui(self._append_system, t("识别失败：{exc}", exc=exc))
             self._ui(self._finish_busy)
@@ -1971,12 +1993,13 @@ class SpokenApp:
     def _shadow_worker(self) -> None:
         try:
             audio = self.recorder.stop()
-            hotwords = resolve_hotwords(self._selected_keys()[0])
+            hotwords, initial_prompt = self._asr_hints()
             recognized = ""
             if self.transcriber is not None:
                 if not self.transcriber.loaded:
                     self.transcriber.load()
-                recognized = self.transcriber.transcribe(audio, hotwords=hotwords)
+                recognized = self.transcriber.transcribe(
+                    audio, hotwords=hotwords, initial_prompt=initial_prompt)
             recognized = (recognized or "").strip()
             ref = self._ref_text or self._last_ai_line
             score = None

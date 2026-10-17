@@ -26,7 +26,11 @@ dialogue:
   report_dir: reports    # 报告保存目录
 
 voice:
-  asr_model: base        # faster-whisper 模型：tiny / base / small / medium
+  # faster-whisper 模型：tiny / base / small / medium
+  # 默认 base 体积小、速度快，但对带口音的英语（尤其非母语者口语）错误率偏高；
+  # 追求识别准确率推荐改用 small（约 460MB，CPU int8 下速度仍可接受），
+  # 改后首次使用会自动重新下载对应模型。
+  asr_model: base
   # 模型默认自动下载到项目 models/faster-whisper-<尺寸>/ 目录（断点续传）。
   # 仅当你手动下载了模型文件、想指定其他位置时才需要填这里：
   # Windows 示例：asr_model_local_path: "D:/models/faster-whisper-base"
