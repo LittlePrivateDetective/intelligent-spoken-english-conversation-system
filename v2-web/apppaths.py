@@ -50,22 +50,30 @@ def data_dir() -> Path:
     return path
 
 
-# 源码开发时，用户的真实配置一直在 v1-desktop/config.yaml
-_DEV_LEGACY_CONFIG = Path(__file__).resolve().parent.parent / "v1-desktop" / "config.yaml"
+# 源码开发时，用户真实填过 Key 的配置通常放在上一级目录（v1 桌面版那里）。
+# 仓库结构是 v1-desktop/{config.yaml, spoken/, v2-web/}，所以候选两处：
+#   ../config.yaml              —— v2-web 与 config.yaml 同级（并入仓库后的布局）
+#   ../v1-desktop/config.yaml   —— v2-web 独立放在工作区根时的老布局
+_DEV_CONFIG_CANDIDATES = [
+    Path(__file__).resolve().parent.parent / "config.yaml",
+    Path(__file__).resolve().parent.parent / "v1-desktop" / "config.yaml",
+]
 
 
 def config_file() -> Path:
     """当前生效的配置文件路径。
 
     - 冻结态：%APPDATA%/spoken-web/config.yaml
-    - 源码态：优先 v2-web/config.yaml，若不存在而 v1-desktop/config.yaml 在，
-      沿用旧位置（不复制、不改动，避免开发时两份配置打架）。
+    - 源码态：优先 v2-web/config.yaml；没有则沿用上一级已有配置（不复制、不改动，
+      避免开发时两份配置打架）。
     """
     own = data_dir() / "config.yaml"
     if own.is_file():
         return own
-    if not is_frozen() and _DEV_LEGACY_CONFIG.is_file():
-        return _DEV_LEGACY_CONFIG
+    if not is_frozen():
+        for cand in _DEV_CONFIG_CANDIDATES:
+            if cand.is_file():
+                return cand
     return own
 
 
