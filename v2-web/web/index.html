@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>spoken · 四六级口语训练</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ================= 顶栏 ================= -->
+  <header class="appbar">
+    <a class="brand" data-view="home" href="#home">
+      <span class="brand-mark">S</span>
+      <span class="brand-text">
+        <strong>spoken</strong>
+        <small>四六级口语训练</small>
+      </span>
+    </a>
+
+    <nav class="tabs">
+      <button class="tab" data-view="home">首页</button>
+      <button class="tab" data-view="exam">四六级考试</button>
+      <button class="tab" data-view="practice">场景练习</button>
+    </nav>
+
+    <div class="appbar-right">
+      <span class="status" id="status">
+        <i class="dot" id="statusDot"></i>
+        <span id="statusText">连接中</span>
+      </span>
+      <button class="icon-btn" id="themeBtn" title="切换深色 / 浅色">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4.2"></circle>
+          <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="main" id="main">
+
+    <!-- ================= 首页 ================= -->
+    <section class="view" id="view-home">
+      <div class="hero">
+        <p class="eyebrow">CET-SET4 / CET-SET6 · 机考流程复刻</p>
+        <h1>按考试流程练，<span class="hl">分数才长得快</span></h1>
+        <p class="lede">
+          真实题型、真实时长、官方六维评分。AI 先当考官给你打分，再当搭档陪你练互动——每一段都能听到问题出在哪。
+        </p>
+        <div class="hero-actions">
+          <button class="btn btn-primary btn-lg" data-start="cet4">开始四级模拟</button>
+          <button class="btn btn-ghost btn-lg" data-start="cet6">开始六级模拟</button>
+        </div>
+      </div>
+
+      <div class="section-head">
+        <h2>选择考试级别</h2>
+        <p>两场考试的题型、时长、评分标准都按官方表格还原</p>
+      </div>
+      <div class="cards" id="examCards">
+        <p class="muted">加载考试结构…</p>
+      </div>
+
+      <div class="feature-row">
+        <div class="feature">
+          <h3>官方六维评分</h3>
+          <p>准确性、语言范围、话语长短、连贯性、灵活性、适切性——按四六级口试评分维度逐段打分。</p>
+        </div>
+        <div class="feature">
+          <h3>朗读客观比对</h3>
+          <p>朗读题不听模型"感觉"：本地做词级对齐算错误率，读错哪个词、漏了哪句都列出来。</p>
+        </div>
+        <div class="feature">
+          <h3>AI 当你的搭档</h3>
+          <p>两人互动与讨论环节由 AI 扮演考生搭档，会接话、会提问、也会跟你意见不同。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 四六级考试 ================= -->
+    <section class="view" id="view-exam" hidden>
+
+      <!-- 级别选择 -->
+      <div id="examSetup">
+        <div class="section-head">
+          <h1>四六级口语模拟考</h1>
+          <p>点级别卡片 = 随机抽一套题库套卷开考；展开题库可以挑特定话题，或让 AI 现出一套新题。</p>
+        </div>
+        <div class="cards" id="setupCards"></div>
+      </div>
+
+      <!-- 考试进行中 -->
+      <div class="exam-layout" id="examRun" hidden>
+        <aside class="steps">
+          <div class="steps-head">
+            <span class="steps-code" id="examCode">CET-SET4</span>
+            <button class="link-btn" id="quitBtn">结束考试</button>
+          </div>
+          <p class="paper-name" id="paperName"></p>
+          <ol class="step-list" id="stepList"></ol>
+        </aside>
+
+        <div class="stage">
+          <div class="stage-head">
+            <span class="part-badge" id="partBadge">Part 1</span>
+            <h2 id="taskLabel">自我介绍</h2>
+            <span class="stage-count" id="stageCount">1 / 5</span>
+          </div>
+
+          <div class="prompt-card" id="promptCard"></div>
+          <p class="tip-line" id="tipLine"></p>
+
+          <div class="answer-bar">
+            <div class="ring-wrap" id="ringWrap">
+              <svg class="ring" viewBox="0 0 120 120">
+                <circle class="ring-bg" cx="60" cy="60" r="54"></circle>
+                <circle class="ring-fg" cx="60" cy="60" r="54" id="ringFg"></circle>
+              </svg>
+              <div class="ring-center">
+                <span class="ring-num" id="timerNum">--</span>
+                <span class="ring-label" id="timerLabel">准备</span>
+              </div>
+            </div>
+
+            <div class="answer-main">
+              <div class="state-line" id="stateLine">点「开始作答」后计时</div>
+
+              <!-- 互动任务的搭档对话区（其它任务隐藏） -->
+              <div class="dialogue" id="dialogue" hidden></div>
+
+              <textarea id="answerText" rows="3"
+                        placeholder="按麦克风说英语，识别结果会出现在这里；也可以直接打字测试。"></textarea>
+
+              <div class="controls">
+                <button class="btn btn-mic" id="micBtn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                       stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="2.5" width="6" height="11" rx="3"></rect>
+                    <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5"></path>
+                  </svg>
+                  <span id="micText">录音</span>
+                </button>
+                <button class="btn btn-primary" id="submitBtn">开始作答</button>
+                <button class="btn btn-ghost" id="partnerBtn" hidden>对搭档说</button>
+                <button class="btn btn-text" id="skipBtn">跳过这段</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 单段反馈 -->
+          <div class="feedback" id="feedback" hidden></div>
+        </div>
+      </div>
+
+      <!-- 整场报告 -->
+      <div id="examReport" hidden></div>
+    </section>
+
+    <!-- ================= 场景练习 ================= -->
+    <section class="view" id="view-practice" hidden>
+      <div class="layout">
+        <aside class="sidebar">
+          <section class="panel">
+            <h2>选择场景</h2>
+            <div class="scenario-list" id="scenarioList">
+              <p class="muted">加载中…</p>
+            </div>
+          </section>
+          <section class="panel">
+            <h2>选择难度</h2>
+            <div class="difficulty-row" id="difficultyRow"></div>
+          </section>
+          <div class="sidebar-actions">
+            <button class="btn btn-primary" id="startBtn">开始对话</button>
+            <button class="btn btn-ghost" id="endBtn" disabled>结束并总结</button>
+          </div>
+        </aside>
+
+        <section class="chat-area">
+          <div class="messages" id="messages">
+            <div class="empty-hint" id="emptyHint">
+              <p>选好场景和难度，点「开始对话」</p>
+              <p class="muted">对话中可以用麦克风说英语，也可以直接打字</p>
+            </div>
+          </div>
+          <div class="input-bar">
+            <button class="btn btn-mic" id="micBtn2" title="单击开始 / 再点结束">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="2.5" width="6" height="11" rx="3"></rect>
+                <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5"></path>
+              </svg>
+            </button>
+            <input type="text" id="textInput" placeholder="输入英语，或点麦克风说话…" autocomplete="off">
+            <button class="btn btn-primary" id="sendBtn">发送</button>
+          </div>
+          <p class="input-hint" id="inputHint"></p>
+        </section>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 场景练习总结浮层 -->
+  <div class="modal-mask" id="summaryModal" hidden>
+    <div class="modal">
+      <h2>练习总结</h2>
+      <div class="modal-body" id="summaryBody"></div>
+      <button class="btn btn-primary" id="closeSummary">知道了</button>
+    </div>
+  </div>
+
+  <!-- 轻提示 -->
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="app.js"></script>
+  <script src="exam.js"></script>
+</body>
+</html>

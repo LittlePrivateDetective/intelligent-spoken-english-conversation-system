@@ -3,6 +3,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+dist-v*/
 .venv/
 venv/
 config.yaml

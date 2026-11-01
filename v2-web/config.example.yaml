@@ -1,0 +1,85 @@
+# spoken 配置文件
+# 第一次启动应用时会自动在 %APPDATA%\spoken-web\ 生成 config.yaml，
+# 你只要把下面 llm.api_key 换成自己的 Key 就能用（改完重启应用生效）。
+# 不填 Key 也能打开页面，但对话和评分会走离线演示模式。
+
+llm:
+  # 任何 OpenAI 兼容接口均可（/chat/completions）
+  # 常见示例：
+  #   OpenAI:     https://api.openai.com/v1
+  #   DeepSeek:   https://api.deepseek.com/v1
+  #   Moonshot:   https://api.moonshot.cn/v1
+  #   通义千问:    https://dashscope.aliyuncs.com/compatible-mode/v1
+  #   Ollama:     http://localhost:11434/v1   （本地模型，key 可随意填）
+  #
+  # 四六级板块要模型输出六维评分的 JSON，建议用能力较强的模型：
+  #   qwen-plus / qwen-max（通义）、deepseek-chat 实测都可以；
+  #   小参数本地模型容易漏字段（会自动降级为规则评分）。
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  api_key: "sk-在这里填入你的Key"
+  model: "qwen-plus"
+  temperature: 0.7
+  timeout: 60
+  # 可选：Ollama 思考模型（如 qwen3）的思考开关。false = 不生成推理过程，回复更快。
+  # 其他服务商请删除本行。
+  # think: false
+
+dialogue:
+  max_turns: 25          # 单次对话最多轮数
+  min_turns: 3           # 至少聊几轮才允许自然结束
+  feedback_language: zh  # 纠错解释语言：zh（中文）/ en（英文）
+  save_report: true      # 结束后是否保存 Markdown 总结报告
+  report_dir: reports    # 报告保存目录
+
+voice:
+  # faster-whisper 模型：tiny / base / small / medium
+  # 默认 base 体积小、速度快，但对带口音的英语（尤其非母语者口语）错误率偏高；
+  # 追求识别准确率推荐改用 small（约 460MB，CPU int8 下速度仍可接受），
+  # 改后首次使用会自动重新下载对应模型。
+  asr_model: base
+  # 模型默认自动下载到项目 models/faster-whisper-<尺寸>/ 目录（断点续传）。
+  # 仅当你手动下载了模型文件、想指定其他位置时才需要填这里：
+  # Windows 示例：asr_model_local_path: "D:/models/faster-whisper-base"
+  asr_model_local_path: ""
+  asr_language: en       # 识别语言（练习英语固定 en）
+  sample_rate: 16000     # 录音采样率（Hz）
+  tts_rate: 175          # AI 朗读语速（词/分钟，本地 SAPI 用）
+  tts_voice: ""          # 留空 = 自动选英文语音；或填本机 SAPI 语音 id
+  tts_volume: 100        # 音量 0~100
+  tts_speed: medium      # 语速档位：slow / medium / fast
+  auto_speak: true       # AI 台词自动朗读（纠错反馈不朗读）
+
+# 云端 TTS（可选）：开启后用 DashScope CosyVoice 合成，支持多语种、音色更清晰。
+# 未开启或失败会自动回退本地 SAPI。需单独在百炼开通并获取 API Key。
+#
+# 口音可选值（详见 spoken/accents.py，均为 CosyVoice 官方音色，勿混用其他模型音色）：
+#   en-US  美式英语   loongabby_v3   ← 可用，英语练习推荐
+#   en-GB  英式英语   loongemily_v3  ← 可用，英语练习推荐
+#   ja-JP  日语发音人 loongriko_v3   ← 音色只朗读日语，不是英语口音
+#   ko-KR  韩语发音人 loongkyong_v3  ← 音色只朗读韩语，不是英语口音
+#   th-TH / en-IN / vi-VN / ms-MY / kk-KZ / uz-UZ
+#          → CosyVoice 官方无对应音色（泰语/印度英语/越南语/马来语/哈萨克语/
+#            乌兹别克语），界面中会置灰不可选
+# 若需要以上缺失口音，可在下方 custom_voice 填入「声音复刻」得到的音色 id。
+cloud_tts:
+  enabled: false
+  api_key: ""            # 百炼 API Key（与 qwen-plus 可共用同一 Key）
+  model: "cosyvoice-v3-flash"
+  accent: "en-US"        # 口音/发音人，取值见上方说明
+  custom_voice: ""       # 自定义音色 id（留空则用上面 accent 对应的官方音色）
+  custom_language_hint: ""  # 自定义音色的语言，留空默认 en
+
+# 发音/流利度评分（可选）：阿里云「智能语音交互」语音评测，真正声学打分。
+# 与 qwen-plus / 云端 TTS 是独立服务，需单独开通并获取 AppKey 与 Token。
+assessment:
+  enabled: false
+  appkey: ""             # 智能语音交互项目 AppKey
+  token: ""              # 访问 Token（也可后续改为用 AK/SK 自动获取）
+  region: "cn-shanghai"  # 服务地域
+  model_id: "en.pred.score"
+
+# 界面偏好：均可在设置页右上角直接切换，此处为默认值
+ui:
+  language: zh           # 界面语言：zh（中文）/ en（English）
+  theme: light           # 主题：light（浅色）/ dark（深色）
+  window_geometry: ""    # 窗口位置与大小记忆，如 "960x720+100+50"；留空=默认居中

@@ -1,0 +1,257 @@
+{
+  "schema": 1,
+  "level": "cet6",
+  "note": "CET-SET6 仿真卷：按官方题型与时长编写，话题取自历年高频题类。非官方真题原文。",
+  "papers": [
+    {
+      "id": "cet6-01",
+      "title": "AI and the Job Market",
+      "tags": ["科技", "就业"],
+      "exam_qa": [
+        "Some people worry that artificial intelligence will take away many jobs. What is your opinion?",
+        "How should university students prepare for a job market shaped by AI?"
+      ],
+      "presentation": {
+        "topic": "Will AI create more jobs than it destroys?",
+        "points": [
+          "Your overall position",
+          "Which kinds of jobs are most likely to change",
+          "What individuals and schools should do about it"
+        ],
+        "prompt": "Give a one-and-a-half-minute presentation on the topic. You have one minute to prepare."
+      },
+      "discussion": {
+        "task": "Discuss with your partner how universities should change what they teach because of AI, and agree on two concrete changes.",
+        "partner_role": "another candidate who partly disagrees with you"
+      },
+      "followup": [
+        "If you could design one course about AI for all students, what would it cover and why?"
+      ]
+    },
+    {
+      "id": "cet6-02",
+      "title": "Graduates and Start-ups",
+      "tags": ["就业", "创业"],
+      "exam_qa": [
+        "More and more graduates choose to start their own business instead of taking a stable job. What do you think of this trend?",
+        "What qualities does a person need to succeed in starting a business?"
+      ],
+      "presentation": {
+        "topic": "Is it wise for fresh graduates to start a business?",
+        "points": [
+          "The advantages and risks you see",
+          "Which conditions matter most for success",
+          "Your advice to a friend who is considering it"
+        ],
+        "prompt": "Give a one-and-a-half-minute presentation on the topic. You have one minute to prepare."
+      },
+      "discussion": {
+        "task": "Discuss with your partner whether a university should encourage students to start businesses, and agree on what support it should provide.",
+        "partner_role": "another candidate who supports the idea more strongly than you"
+      },
+      "followup": [
+        "Would you rather work for a large company or a small start-up after graduation? Why?"
+      ]
+    },
+    {
+      "id": "cet6-03",
+      "title": "Short Videos and Attention",
+      "tags": ["媒体", "心理"],
+      "exam_qa": [
+        "Short videos are everywhere on campus. Do you think they are a good way to learn?",
+        "How do you manage your attention when your phone keeps asking for it?"
+      ],
+      "presentation": {
+        "topic": "Short videos and the attention of young people",
+        "points": [
+          "How short videos have changed daily habits",
+          "The benefits and the hidden costs",
+          "What you would suggest to a friend who cannot stop scrolling"
+        ],
+        "prompt": "Give a one-and-a-half-minute presentation on the topic. You have one minute to prepare."
+      },
+      "discussion": {
+        "task": "Discuss with your partner what a university can do to help students use their phones in a healthier way, and agree on two measures.",
+        "partner_role": "another candidate who thinks the problem is exaggerated"
+      },
+      "followup": [
+        "Some people say the ability to focus is now a competitive advantage. Do you agree?"
+      ]
+    },
+    {
+      "id": "cet6-04",
+      "title": "An Ageing Population",
+      "tags": ["社会", "养老"],
+      "exam_qa": [
+        "China's population is ageing quickly. What challenges does this bring to ordinary families?",
+        "How can young people prepare for the responsibility of supporting older parents?"
+      ],
+      "presentation": {
+        "topic": "Who should look after elderly people: families or the state?",
+        "points": [
+          "The situation in your city or region",
+          "What families and the state each do well",
+          "What you think should change in the next ten years"
+        ],
+        "prompt": "Give a one-and-a-half-minute presentation on the topic. You have one minute to prepare."
+      },
+      "discussion": {
+        "task": "Discuss with your partner what a community can do to make life easier for older residents, and agree on two practical measures.",
+        "partner_role": "another candidate who believes families should carry most of the responsibility"
+      },
+      "followup": [
+        "Would you be willing to live with your parents after marriage? Why or why not?"
+      ]
+    },
+    {
+      "id": "cet6-05",
+      "title": "Remote Work",
+      "tags": ["职场", "科技"],
+      "exam_qa": [
+        "Many companies now allow employees to work from home for part of the week. What are the effects on young workers?",
+        "Would you prefer to work in an office or from home? Why?"
+      ],
+      "presentation": {
+        "topic": "Is remote work good for people early in their careers?",
+        "points": [
+          "The advantages you would expect",
+          "What a new employee may lose",
+          "How companies could get the best of both"
+        ],
+        "prompt": "Give a one-and-a-half-minute presentation on the topic. You have one minute to prepare."
+      },
+      "discussion": {
+        "task": "Discuss with your partner whether a company should let employees choose their own working pattern, and agree on two rules that would make it fair.",
+        "partner_role": "another candidate who thinks office work is essential for a new employee"
+      },
+      "followup": [
+        "What would make you accept a lower salary in exchange for more flexibility?"
+      ]
+    },
+    {
+      "id": "cet6-06",
+      "title": "Keeping Traditions Alive",
+      "tags": ["文化", "传统"],
+      "exam_qa": [
+        "Some young people prefer Western festivals to traditional Chinese ones. Is this a problem?",
+        "How can traditional culture be made interesting to people your age?"
+      ],
+      "presentation": {
+        "topic": "How should traditional festivals be kept alive?",
+        "points": [
+          "What has changed in how your family celebrates",
+          "Why some traditions lose their appeal",
+          "Your suggestions for schools and families"
+        ],
+        "prompt": "Give a one-and-a-half-minute presentation on the topic. You have one minute to prepare."
+      },
+      "discussion": {
+        "task": "Discuss with your partner how a university can help students understand traditional culture, and agree on two activities.",
+        "partner_role": "another candidate who thinks tradition should be left alone"
+      },
+      "followup": [
+        "If you could bring back one tradition to your family, what would it be?"
+      ]
+    },
+    {
+      "id": "cet6-07",
+      "title": "The Price of Fast Fashion",
+      "tags": ["消费", "环保"],
+      "exam_qa": [
+        "Clothes are cheaper than ever, and people buy far more than they need. Why?",
+        "What could persuade consumers to buy less and choose better?"
+      ],
+      "presentation": {
+        "topic": "Fast fashion: convenience or a hidden cost?",
+        "points": [
+          "How buying habits have changed",
+          "The costs that shoppers do not see",
+          "What would change your own spending"
+        ],
+        "prompt": "Give a one-and-a-half-minute presentation on the topic. You have one minute to prepare."
+      },
+      "discussion": {
+        "task": "Discuss with your partner what a university could do to encourage students to consume more responsibly, and agree on two measures.",
+        "partner_role": "another candidate who thinks individual choice matters more than any policy"
+      },
+      "followup": [
+        "Would you pay twice as much for a jacket that lasts twice as long?"
+      ]
+    },
+    {
+      "id": "cet6-08",
+      "title": "Mental Health on Campus",
+      "tags": ["心理", "教育"],
+      "exam_qa": [
+        "More university students say they feel anxious or depressed. Why might this be?",
+        "What stops young people from asking for help?"
+      ],
+      "presentation": {
+        "topic": "Should universities treat mental health as seriously as physical health?",
+        "points": [
+          "What you have observed among students",
+          "What support is usually available",
+          "What you would add or change"
+        ],
+        "prompt": "Give a one-and-a-half-minute presentation on the topic. You have one minute to prepare."
+      },
+      "discussion": {
+        "task": "Discuss with your partner how a university can make it easier for students to seek help, and agree on two steps.",
+        "partner_role": "another candidate who thinks such problems should be solved privately"
+      },
+      "followup": [
+        "If a friend told you he had not slept well for a month, what would you say to him?"
+      ]
+    },
+    {
+      "id": "cet6-09",
+      "title": "Small Cities, Big Choices",
+      "tags": ["城市", "就业"],
+      "exam_qa": [
+        "Many young people leave small towns for big cities. What is lost when they go?",
+        "Would you consider working in a smaller city or in the countryside? Why?"
+      ],
+      "presentation": {
+        "topic": "Can small cities offer young people a good life?",
+        "points": [
+          "What attracts young people to big cities",
+          "What small cities can offer",
+          "What would make you choose one over the other"
+        ],
+        "prompt": "Give a one-and-a-half-minute presentation on the topic. You have one minute to prepare."
+      },
+      "discussion": {
+        "task": "Discuss with your partner what a small city could do to keep its young people, and agree on two measures.",
+        "partner_role": "another candidate who is determined to live in a big city"
+      },
+      "followup": [
+        "What would your parents say if you decided to return to your hometown?"
+      ]
+    },
+    {
+      "id": "cet6-10",
+      "title": "Is a Master's Degree Worth It",
+      "tags": ["教育", "就业"],
+      "exam_qa": [
+        "Every year more students take the postgraduate entrance exam. Is a higher degree always worth it?",
+        "What do employers value besides academic qualifications?"
+      ],
+      "presentation": {
+        "topic": "Is a master's degree the best investment for a graduate today?",
+        "points": [
+          "Why so many students choose to continue studying",
+          "The costs and the returns",
+          "What you would advise a younger student"
+        ],
+        "prompt": "Give a one-and-a-half-minute presentation on the topic. You have one minute to prepare."
+      },
+      "discussion": {
+        "task": "Discuss with your partner whether universities should help all students plan a career, and agree on two kinds of support.",
+        "partner_role": "another candidate who believes further study is always the safer choice"
+      },
+      "followup": [
+        "If you were offered a good job and a place on a master's programme on the same day, what would you do?"
+      ]
+    }
+  ]
+}

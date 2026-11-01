@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# PyInstaller 产物
+build/
+dist/
+*.log
+
+# 用户配置与本地数据 —— 绝不能提交（含 API Key）
+config.yaml
+*.db
+reports/
+
+# 语音模型（首次使用自动下载，几百 MB，不进仓库）
+models/
+
+# 前端测试依赖
+_uitest/node_modules/
+_uitest/package-lock.json

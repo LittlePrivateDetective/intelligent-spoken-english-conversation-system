@@ -1,0 +1,331 @@
+{
+  "schema": 1,
+  "level": "cet4",
+  "note": "CET-SET4 仿真卷：按官方题型与时长编写，话题取自历年高频题类。非官方真题原文。",
+  "papers": [
+    {
+      "id": "cet4-01",
+      "title": "Reading Before Bed",
+      "tags": ["学习", "健康"],
+      "reading": {
+        "title": "Reading Before Bed",
+        "passage": "Many students say they have no time to read. Yet reading for just fifteen minutes before bed can change more than you expect. Unlike a phone screen, a printed page does not keep sending you alerts. Your mind slows down, and your thoughts settle. Researchers at several universities have found that people who read a few pages at night fall asleep faster and wake up less often. The effect is not only about sleep. A story gives your brain something to build, so you practise imagining situations you have never met. Over a term, that quiet habit adds up to hundreds of pages and thousands of new words. You do not need a reading list or a perfect plan. Pick one book, put it beside your pillow, and open it tonight.",
+        "questions": [
+          "Why does the speaker compare reading with looking at a phone screen?",
+          "What does the speaker suggest you do to start the habit?"
+        ]
+      },
+      "presentation": {
+        "topic": "A skill you would like to learn",
+        "points": [
+          "What the skill is and why it interests you",
+          "How you would go about learning it",
+          "How it might help you in the future"
+        ],
+        "prompt": "Describe a skill you would like to learn. You have one minute."
+      },
+      "interaction": {
+        "situation": "Your class is planning a one-day trip before graduation. You and your partner are organizing it.",
+        "task": "Decide where to go, how to get there, what to bring, and how to split the work.",
+        "partner_role": "a classmate who is helping you organize the trip"
+      }
+    },
+    {
+      "id": "cet4-02",
+      "title": "Shared Bikes in the City",
+      "tags": ["城市", "科技"],
+      "reading": {
+        "title": "Shared Bikes in the City",
+        "passage": "Ten years ago, few people in Chinese cities used a bicycle for daily travel. Today, shared bikes are everywhere. You unlock one with your phone, ride a few kilometres, and leave it by the road. The system is cheap and surprisingly effective. For a student who lives two kilometres from campus, a shared bike is often faster than waiting for a bus. It also produces no exhaust, which matters in cities where traffic is heavy. But the model has costs. Bicycles pile up near subway stations, blocking pavements, and broken ones are sometimes left for weeks. Some cities have responded by marking fixed parking areas and limiting how many bikes each company may place. The lesson is simple: a good idea still needs rules to keep it working.",
+        "questions": [
+          "What advantages of shared bikes does the speaker mention?",
+          "What problems have some cities tried to solve, and how?"
+        ]
+      },
+      "presentation": {
+        "topic": "A place in your city that you often visit",
+        "points": [
+          "Where it is and what it looks like",
+          "What you usually do there",
+          "Why you keep going back"
+        ],
+        "prompt": "Describe a place in your city that you often visit. You have one minute."
+      },
+      "interaction": {
+        "situation": "Your English club is holding a speech contest next month. You and your partner are in charge.",
+        "task": "Decide the topic, the time and place, and how to attract more listeners.",
+        "partner_role": "a club member working with you on the contest"
+      }
+    },
+    {
+      "id": "cet4-03",
+      "title": "Small Habits, Big Change",
+      "tags": ["习惯", "成长"],
+      "reading": {
+        "title": "Small Habits, Big Change",
+        "passage": "Most people believe that big changes require big decisions. Research on habits suggests the opposite. A habit is built from a small action repeated in the same place, at the same time, until it needs no effort. If you want to exercise more, you do not need a two-hour plan. You need to put your shoes by the door and walk for ten minutes after dinner. If you want to read more, put a book where you sit with your coffee. The action must be small enough that you cannot say no to it. What matters is not the size of the first step but the number of times you take it. Weeks later, the small action starts to feel normal, and normal actions are the ones that last.",
+        "questions": [
+          "What is the speaker's main argument about habits?",
+          "According to the speaker, what makes a new habit easy to keep?"
+        ]
+      },
+      "presentation": {
+        "topic": "A person who helped you a lot",
+        "points": [
+          "Who the person is",
+          "What he or she did for you",
+          "How it changed you"
+        ],
+        "prompt": "Describe a person who helped you a lot. You have one minute."
+      },
+      "interaction": {
+        "situation": "You and your partner share a flat near campus. You are discussing whether to keep a pet.",
+        "task": "Talk about the benefits and the problems, then reach a decision together.",
+        "partner_role": "your roommate"
+      }
+    },
+    {
+      "id": "cet4-04",
+      "title": "A Part-time Job Worth Taking",
+      "tags": ["兼职", "成长"],
+      "reading": {
+        "title": "A Part-time Job Worth Taking",
+        "passage": "Many students take a part-time job for the money, and that is a fair reason. Yet a job teaches things a classroom rarely does. When you serve customers for four hours, you learn to stay calm with someone who is rude to you. When you arrive on time every Saturday for a term, you learn what reliability means to a manager. You also discover how a small business actually runs, from ordering supplies to counting the cash at closing. None of this appears on a transcript, but it shows up in how you talk about work in an interview. One warning: a job that takes twenty hours a week can quietly damage your grades. Ten hours is usually enough to learn, earn, and still study.",
+        "questions": [
+          "What does the speaker say students learn from a part-time job?",
+          "What warning does the speaker give about working hours?"
+        ]
+      },
+      "presentation": {
+        "topic": "A useful app you often use",
+        "points": [
+          "What the app is and what you use it for",
+          "How it has changed the way you do something",
+          "What you would improve about it"
+        ],
+        "prompt": "Describe a useful app you often use. You have one minute."
+      },
+      "interaction": {
+        "situation": "Your department is organizing a flea market where students sell used books and clothes. You and your partner are planning it.",
+        "task": "Decide when and where to hold it, how sellers will sign up, and how to attract buyers.",
+        "partner_role": "a classmate on the organizing team"
+      }
+    },
+    {
+      "id": "cet4-05",
+      "title": "Why Libraries Still Matter",
+      "tags": ["文化", "社会"],
+      "reading": {
+        "title": "Why Libraries Still Matter",
+        "passage": "People sometimes ask whether libraries are still necessary when almost any book can be bought online. The question misses what a library actually offers. A library is one of the few public spaces where you can sit for hours without buying anything. Students who share a small flat with four roommates often go there for quiet, not for books. Older readers come for newspapers and for company. And a library buys what an individual cannot: expensive journals, local history, and tools for people looking for work. In many towns, it is also the only place with free internet and a warm room in winter. Books are the beginning of the story, not the whole of it.",
+        "questions": [
+          "Why does the speaker say the question about libraries is misleading?",
+          "Which groups of people does the speaker mention, and what do they use the library for?"
+        ]
+      },
+      "presentation": {
+        "topic": "A book that impressed you",
+        "points": [
+          "What the book was about",
+          "Why it impressed you",
+          "Whether you would recommend it, and to whom"
+        ],
+        "prompt": "Describe a book that impressed you. You have one minute."
+      },
+      "interaction": {
+        "situation": "Students complain that seats in the library are taken by bags and books for hours. You and your partner are discussing what to do.",
+        "task": "Agree on two measures the library could take, and how to explain them to students.",
+        "partner_role": "a classmate who thinks nothing should change"
+      }
+    },
+    {
+      "id": "cet4-06",
+      "title": "Learning to Cook",
+      "tags": ["生活", "独立"],
+      "reading": {
+        "title": "Learning to Cook",
+        "passage": "Cooking is a skill that looks harder than it is. Most weekday meals need only three things: something to cook, some oil or water, and heat. The real difficulty is planning. If you decide at six in the evening what to eat, you will order food; if you decide on Sunday what the week looks like, you will cook. Beginners do best with one simple dish they can repeat until it becomes automatic, and then a second. Do not start with a dish that has twelve ingredients and a photograph to match. A plain tomato and egg dish, cooked twenty times, teaches you more about heat and timing than a complicated recipe cooked once.",
+        "questions": [
+          "What does the speaker say is the real difficulty in cooking?",
+          "What advice does the speaker give to beginners?"
+        ]
+      },
+      "presentation": {
+        "topic": "A habit you would like to change",
+        "points": [
+          "What the habit is",
+          "Why you want to change it",
+          "What you plan to do instead"
+        ],
+        "prompt": "Describe a habit you would like to change. You have one minute."
+      },
+      "interaction": {
+        "situation": "Your dormitory's electricity bill was unusually high last month. You and your partner are working out a plan to save energy.",
+        "task": "Find the main causes, agree on three rules for the room, and decide who will check them.",
+        "partner_role": "your roommate, who thinks the bill is not a problem"
+      }
+    },
+    {
+      "id": "cet4-07",
+      "title": "The Quiet Power of Walking",
+      "tags": ["健康", "生活"],
+      "reading": {
+        "title": "The Quiet Power of Walking",
+        "passage": "Walking is the most ordinary exercise, which is probably why people forget how much it does. Twenty minutes at a comfortable pace lowers blood pressure, helps your mood, and gives your eyes a rest from a screen. It also does something less obvious: it lets your mind wander. Many writers and scientists say their best ideas came during a walk, not at a desk. You do not need special shoes, a gym card, or a plan. You need a destination small enough to be believable, such as the shop at the corner. The habit works best when it is attached to something you already do, like buying breakfast or finishing a class.",
+        "questions": [
+          "What benefits of walking does the speaker mention?",
+          "How does the speaker suggest making walking a habit?"
+        ]
+      },
+      "presentation": {
+        "topic": "A memorable trip",
+        "points": [
+          "Where you went and who was with you",
+          "What happened during the trip",
+          "Why you still remember it"
+        ],
+        "prompt": "Describe a memorable trip. You have one minute."
+      },
+      "interaction": {
+        "situation": "You and your partner are choosing a destination for a graduation trip on a limited budget.",
+        "task": "Compare two possible places, decide on one, and agree on how to keep costs down.",
+        "partner_role": "a friend with a different preference from yours"
+      }
+    },
+    {
+      "id": "cet4-08",
+      "title": "Food Waste on Campus",
+      "tags": ["环保", "校园"],
+      "reading": {
+        "title": "Food Waste on Campus",
+        "passage": "Walk through a university dining hall at the end of lunch and look at the trays coming back. Much of the food is still there. Studies of campus canteens in several cities found that students leave between ten and twenty per cent of what they take. The reasons are ordinary: large fixed portions, a rush to get to class, and the feeling that food left on the plate is not really waste. Some universities have tried smaller plates and asked students to take less and return for more. The result is usually a sharp drop in waste with no drop in satisfaction. The change begins with one question at the counter: how hungry am I, really?",
+        "questions": [
+          "According to the speaker, what causes food waste in campus canteens?",
+          "What have some universities done about it, and with what result?"
+        ]
+      },
+      "presentation": {
+        "topic": "A piece of advice you received",
+        "points": [
+          "What the advice was and who gave it",
+          "When you used it",
+          "How it helped you"
+        ],
+        "prompt": "Describe a piece of advice you received. You have one minute."
+      },
+      "interaction": {
+        "situation": "Your school is holding a welcome party for new students next week. You and your partner are in charge of the programme.",
+        "task": "Decide the order of the performances, how long each one lasts, and what to do if a performer is late.",
+        "partner_role": "a classmate who is co-organizing the party"
+      }
+    },
+    {
+      "id": "cet4-09",
+      "title": "Sleep and the Student Brain",
+      "tags": ["健康", "学习"],
+      "reading": {
+        "title": "Sleep and the Student Brain",
+        "passage": "Students often treat sleep as the thing they will catch up on later. The brain does not work that way. During deep sleep, the mind sorts what you learned during the day and moves it into longer storage. Cut that stage short for a week and memory suffers, even if you spend more hours studying. Sleep also affects mood and patience, which matter in a classroom. A late night before an exam is a poor trade: you gain a few hours of reading and lose the ability to recall it. The most useful change is not sleeping more on Sunday but sleeping at roughly the same time every night, including the boring ones.",
+        "questions": [
+          "What does the speaker say happens during deep sleep?",
+          "Why does the speaker call a late night before an exam a poor trade?"
+        ]
+      },
+      "presentation": {
+        "topic": "A challenge you overcame",
+        "points": [
+          "What the challenge was",
+          "How you dealt with it",
+          "What you learned from it"
+        ],
+        "prompt": "Describe a challenge you overcame. You have one minute."
+      },
+      "interaction": {
+        "situation": "You and your partner are planning a summer social practice project about rural schools.",
+        "task": "Decide the topic, the place, how long you will stay, and how to divide the work.",
+        "partner_role": "your teammate in the project"
+      }
+    },
+    {
+      "id": "cet4-10",
+      "title": "Volunteering in the Community",
+      "tags": ["公益", "成长"],
+      "reading": {
+        "title": "Volunteering in the Community",
+        "passage": "Volunteering is often described as helping others, and it is. But the people who benefit most may be the volunteers themselves. A student who spends two hours a week reading with children at a local centre learns to explain an idea in simple words, to be patient when nothing works, and to lead a small group. These are the skills employers ask about in interviews, and they are hard to learn from a textbook. Volunteering also puts you in rooms you would never otherwise enter: a hospital ward, a repair workshop, a village school. Start small and stay for a term. One afternoon of cleaning a park changes very little; Tuesday afternoons for three months change something.",
+        "questions": [
+          "What does the speaker say volunteers themselves gain?",
+          "What advice does the speaker give about how to volunteer?"
+        ]
+      },
+      "presentation": {
+        "topic": "A teacher who influenced you",
+        "points": [
+          "Who the teacher was",
+          "What he or she did that mattered to you",
+          "How it influenced your choices"
+        ],
+        "prompt": "Describe a teacher who influenced you. You have one minute."
+      },
+      "interaction": {
+        "situation": "Your class wants to start a regular volunteer programme in a nearby community.",
+        "task": "Choose what service to offer, agree on a schedule, and decide how to keep volunteers interested.",
+        "partner_role": "a classmate who is worried that nobody will join"
+      }
+    },
+    {
+      "id": "cet4-11",
+      "title": "The Bus That Changed a Street",
+      "tags": ["城市", "交通"],
+      "reading": {
+        "title": "The Bus That Changed a Street",
+        "passage": "When a city adds a bus lane, drivers often complain that one lane is now closed to them. A year later, the same drivers are usually quieter. A dedicated lane lets buses move at a steady speed, so journeys become predictable, and predictable journeys persuade people to leave the car at home. Shops on the street often fear a loss of customers, yet studies in several cities found sales rose once the street was quieter and easier to cross. The change is never painless: parking disappears, and deliveries need new rules. But a street designed for one person in a car is a street designed for very few people. A street designed for a bus serves everyone who cannot drive.",
+        "questions": [
+          "Why do bus journeys become more predictable when a dedicated lane is added?",
+          "What happened to shops on streets that became quieter?"
+        ]
+      },
+      "presentation": {
+        "topic": "A place in your city that has changed",
+        "points": [
+          "What the place was like before",
+          "What has changed",
+          "Whether the change is good, and why"
+        ],
+        "prompt": "Describe a place in your city that has changed. You have one minute."
+      },
+      "interaction": {
+        "situation": "The road outside your campus gate is crowded every morning, and students cross it dangerously. You and your partner are discussing solutions.",
+        "task": "Identify the main causes and agree on two suggestions to take to the school office.",
+        "partner_role": "a classmate who thinks students are also to blame"
+      }
+    },
+    {
+      "id": "cet4-12",
+      "title": "When a Hobby Becomes a Skill",
+      "tags": ["兴趣", "成长"],
+      "reading": {
+        "title": "When a Hobby Becomes a Skill",
+        "passage": "Most hobbies begin as play. You take photographs because it is fun, or you play the guitar badly because you like a song. At some point the hobby becomes something else: you notice that your photographs are always a little dark, and you want to know why. That question is where a skill begins. Skills grow through a loop that is easy to describe and hard to follow: try, look closely at the result, find one thing to change, try again. Most people skip the second step. They take a thousand photographs and look at none of them. Ten photographs examined carefully will teach you more than a hundred uploaded and forgotten.",
+        "questions": [
+          "What marks the moment a hobby becomes a skill?",
+          "What is the loop the speaker describes, and which step do most people skip?"
+        ]
+      },
+      "presentation": {
+        "topic": "A festival you enjoy",
+        "points": [
+          "Which festival it is and when it takes place",
+          "What you usually do",
+          "Why it matters to you"
+        ],
+        "prompt": "Describe a festival you enjoy. You have one minute."
+      },
+      "interaction": {
+        "situation": "You and your partner want to start a monthly reading club in your class.",
+        "task": "Decide what kind of books to read, how often to meet, and how to get classmates to join.",
+        "partner_role": "a classmate who doubts anyone will come"
+      }
+    }
+  ]
+}

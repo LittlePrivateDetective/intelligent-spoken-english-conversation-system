@@ -1,0 +1,20 @@
+# spoken 2.0.0 运行时依赖
+#
+# 装完这一份就能以源码方式跑起来（python launcher.py 或 python server.py）：
+#   pip install -r requirements.txt
+#
+# 打包成 exe 再多装一个 PyInstaller：
+#   pip install pyinstaller
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+numpy>=1.24
+requests>=2.28
+PyYAML>=6.0
+
+# 语音识别（本地 faster-whisper，首次使用会下载模型）
+faster-whisper>=1.0
+
+# Windows 本地 TTS 回退（云端 TTS 未配置时用系统语音）
+pyttsx3>=2.90
