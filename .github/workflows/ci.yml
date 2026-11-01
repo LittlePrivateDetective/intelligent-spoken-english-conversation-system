@@ -3,7 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    # 只对 v1.* 的 tag 构建发布。v2.* 属于 v2-web 的 Web/桌面应用，
+    # 由 .github/workflows/build-windows-app.yml 负责，避免同一个 Release
+    # 里混进两套不同的程序。
+    tags: ["v1.*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
